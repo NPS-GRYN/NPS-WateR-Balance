@@ -15,7 +15,7 @@ library(EGRET)
 library(daymetr)
 
 ### Set path variables and source in files ###
-path<- "C:/David/Water balance/Operational version/Version 3/Hydrology/West hydro project/WaterBalance"
+path<- "C:/Users/mcburns/OneDrive - DOI/water-balance"
 codePath <- file.path(path, 'Code')
 outPath <- file.path(path,"Output")
 dataPath <- file.path(path, "Data")
