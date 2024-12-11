@@ -27,17 +27,17 @@ setwd(path)
 
 # Set Switch variables
 PETMethod = "Oudin" 
-scrape = 1
-optimization = 0
-delayStart = 1 
-NonZeroDrainInitCoeff = 0
-incompleteMonths = 0 
-GridMet = 1
-fillLeapDays = 1 
-future = 1 
-userSetJTemp = 0 
+optimization = FALSE
+delayStart = TRUE 
+NonZeroDrainInitCoeff = FALSE
+incompleteMonths = FALSE
+GridMet = TRUE
+fillLeapDays = TRUE 
+future_analysis = TRUE
+userSetJTemp = FALSE
 percentRedGrid = 1
-plot = 1 
+make_plots = TRUE
+flow_components = 3  # change the number of components that characterize the flow. can be 2 or 3. 2: flow has quick and slow components; 3: flow has quick, slow, and very slow components.
 FolderName = "test" 
 
 ### consider changing all of these variables for a new location
@@ -49,6 +49,18 @@ lon = -111.43 #watershed location
 
 #define stream gauge location
 GaugeSiteID <- "09505200"
+
+# Water balance variables
+#initial flow conditions
+q0 = 0; s0 = 0; v0 = 0
+#IHACRES flow A and B coefficients
+qa<- 0.2; qb<- 0.3; sa<- 0.3; sb = 0.4; va = 0.2           
+vb = (1-(qb/(1-qa)+sb/(1-sa)))*(1-va) #solved for by other variables to conserve mass balance
+
+# Default Water Balance variables (start of optimization)
+gw_add=0; vfm = 0.33; jtemp = 1.982841; jrange = 3 ;hock =  4 
+hockros = 4; dro = 0; mondro = 0; aspect = 180; slope= 0; shade.coeff= 1
+
 
 #Define the period for GridMet and Stream Gauge collection. 
 #The DayMet period is defined to start one year after this period starts
@@ -64,10 +76,6 @@ p_slope = 0.8816; p_bias = 0.055
 #Water Balance variables not to be optimized
 SWC.Max = 100; Soil.Init = SWC.Max; Snowpack.Init = 0 ;T.Base = 0
 
-#Water Balance variables to be optimized
-gw_add=0; vfm = 0.33; jtemp = 1.982841; jrange = 3 ;hock =  4 
-hockros = 4; dro = 0; mondro = 0; aspect = 180; slope= 0; shade.coeff= 1
-
 #Water Balance lower optimization limits
 l_gw_add = 0; l_vfm = 0.25; l_jrange = 2; l_hock = 0; l_hockros = 0
 l_dro= 0; l_mondro = 0; l_aspect= 0; l_slope =  0; l_shade.coeff = 0.7
@@ -78,7 +86,7 @@ u_dro= 0.5; u_mondro= 0.5; u_aspect= 360; u_slope = 45; u_shade.coeff = 1
 
 ######## start of code for Wrapper function ########
 ### Define variables that do not need to be defined outside of the function ###
-if(delayStart==1){
+if(delayStart){
   cutoffYear = startY+11
 }else{cutoffYear = startY} 
 
@@ -90,10 +98,10 @@ if(percentRedGrid<=0| percentRedGrid>1){
 ClimateSiteID_FileName = gsub(pattern = " ", x = ClimateSiteID, replacement = "")
 
 #get elevation from DayMet data. This happens regardless or whether you use DayMet or GridMet climate data
-elev = get_elev_DayMet(lat = lat, lon = lon, startY = startY, endY = endY, scrape = scrape, ClimateSiteID_FileName = ClimateSiteID_FileName)
+elev = get_elev_DayMet(lat = lat, lon = lon, startY = startY, endY = endY, ClimateSiteID_FileName = ClimateSiteID_FileName)
 
 #get j_temp
-if(userSetJTemp==0){
+if(!userSetJTemp){
   j.raster = raster(file.path(dataPath, "merged_jennings.tif"))
   jtemp = get_jtemp(lat = lat, lon= lon, j.raster = j.raster) 
 }
@@ -108,20 +116,14 @@ upper = data.frame(u_gw_add, u_vfm, u_jrange, u_hock,u_hockros,
 lower = data.frame(lower, jtemp = jtemp-0.5) 
 upper = data.frame(upper, jtemp= jtemp+0.5)
 
-#initial flow conditions
-q0 = 0; s0 = 0; v0 = 0
-#IHACRES flow A and B coefficients
-qa<- 0.2; qb<- 0.3; sa<- 0.3; sb = 0.4; va = 0.2           
-vb = (1-(qb/(1-qa)+sb/(1-sa)))*(1-va) #solved for by other variables to conserve mass balance
-
 ### Scrape and format USGS stream gauge data and GridMet or DayMet data ###
 #create start and end date objects of data collection. DayMet will start one year after the year listed here
 startDate<- ymd(paste(startY, startM, startD))
 endDate<-  ymd(paste(endY, endM, endD))
 
-#in the code below, if scrape equals 1, the data is scraped and saved as a csv. If scrape equals 0, the csv is read in
-if(GridMet == 1){
-  if(scrape == 1){
+#in the code below, if meteorological data file does not exist, the data is scraped, saved as a csv, and read in
+if(GridMet){
+  if(!file.exists(file.path(dataPath, paste0(paste("GridMet",ClimateSiteID_FileName,startY, endY, sep = "_" ), ".csv")))){
     point <- data.frame(lon = lon, lat = lat) %>%
       vect(geom = c("lon", "lat"), crs = "EPSG:4326")
     gridMet_vars <- c("pr", "srad","tmmn", "tmmx", "vpd", "vs")
@@ -131,7 +133,7 @@ if(GridMet == 1){
   }else{
     DailyClimData = read.csv(file.path(dataPath, paste0(paste("GridMet",ClimateSiteID_FileName,startY, endY, sep = "_" ), ".csv")))
   }
-}else{if(scrape==1){
+}else{if(!file.exists(file.path(dataPath, paste0(paste("DayMet", ClimateSiteID_FileName, startY+1,endY, sep = "_"), ".csv")))){
   daymetr::download_daymet_batch(file_location = file.path(dataPath,paste0("SiteFile", ClimateSiteID_FileName, ".csv")),
                                  start = startY+1,
                                  end = endY,
@@ -143,8 +145,8 @@ if(GridMet == 1){
 }}
 
 # scrape stream gauge data
-#If scrape equals 1, the data is scraped and saved as a csv. If scrape equals 0, the csv is read in
-if(scrape == 1){
+#If local file does not exist, the data is scraped, saved as a csv, and read in
+if(!file.exists(file.path(dataPath, paste0(paste("USGS_Gauge",GaugeSiteID, startY+1,endY, sep = "_"), ".csv")))){
   DailyStream <- EGRET::readNWISDaily(siteNumber = GaugeSiteID, parameterCd = "00060", 
                                       startDate = startDate, endDate = endDate) |>
     dplyr::filter(grepl('A', Qualifier)) |> #this filters for any Qualifier that has an A. It will return A and A:E
@@ -152,7 +154,7 @@ if(scrape == 1){
   write.csv(DailyStream, file.path(dataPath, paste0(paste("USGS_Gauge",GaugeSiteID, startY+1,endY, sep = "_"), ".csv")))
 }else{DailyStream<- read.csv(file.path(dataPath, paste0(paste("USGS_Gauge",GaugeSiteID, startY+1,endY, sep = "_"), ".csv")))}
 
-if(GridMet== 0){
+if(!GridMet){
   #DayMet data does not have Leap Days in it while the stream gauge data and GridMet data does
   #This can be handled in two ways, and is set by the user with the switch "fillLeapDays"
   #If filled, the leap days are filled with the values of the Daymet Data from the day before
@@ -169,7 +171,7 @@ if(GridMet== 0){
   row.names(NoLeapDays)<- NULL
   DailyClimData$date<- ymd(NoLeapDays$Date)
     
-  if(fillLeapDays==1){
+  if(fillLeapDays){
     DateSeq <- rbind(HasLeapDays, LostDates)
     colnames(DateSeq)<- "date"
     DailyClimData = dplyr::full_join(DateSeq, DailyClimData, by = join_by("date"))
@@ -190,7 +192,7 @@ if(GridMet== 0){
   DailyClimData$yday<- NULL
   DailyClimData$swe..kg.m.2.<- NULL
   #rename columns to match format needed of Gridmet Data
-  if(fillLeapDays==1){ #order of columns was changed because of merging 
+  if(fillLeapDays){ #order of columns was changed because of merging 
     colnames(DailyClimData)<- c("date", "dayl..s." , "pr","srad" ,"tmmx", "tmmn", "vp..Pa.", "month")
   }else{colnames(DailyClimData)<- c("dayl..s." , "pr","srad" ,"tmmx", "tmmn", "vp..Pa." ,"date", "month")}
 }
@@ -199,7 +201,7 @@ if(GridMet== 0){
 obj = readNWISInfo(siteNumber = GaugeSiteID, parameterCd = "00060", interactive = FALSE)
 sqmi = obj$drain_area_va
 
-if(GridMet==1){  #these conversions won't have to be made if you run Daymet data
+if(GridMet){  #these conversions won't have to be made if you run Daymet data
   #convert the temperatures from Kelvin to Celcius
   DailyClimData$tmmn<- kelvin_to_celcius(DailyClimData$tmmn)
   DailyClimData$tmmx<- kelvin_to_celcius(DailyClimData$tmmx)
@@ -227,7 +229,7 @@ Meas_xts<- xts(Meas$MeasMM, order.by = ymd(Meas$Date))
 #The incompleteMonths switch is used here.
 
 Meas$YrMon<- format(as.Date(Meas$Date, format="%Y-%m-%d"),"%Y-%m")
-if(incompleteMonths == 1){
+if(incompleteMonths){
   #sum all months of Measured Discharge, including incomplete months
   MeasAgg<- aggregate(Meas$MeasMM, by=list(Meas$YrMon), FUN=sum)
   colnames(MeasAgg)<- c("YrMon", "MeasMM")
@@ -250,7 +252,7 @@ if(incompleteMonths == 1){
 
 ### Set Updated Initial Flow Conditions if desired ###
 #This is where the NonZeroDrainInitCoeff switch is used
-if(NonZeroDrainInitCoeff == 1){
+if(NonZeroDrainInitCoeff){
   InitCond<- get_Init_Drain_Coef(DailyClimData = DailyClimData, gw_add = gw_add , 
                   vfm = vfm , jrange = jrange ,hock = hock ,hockros = hockros,
                   dro = dro,mondro = mondro , aspect = aspect,slope = slope, 
@@ -266,12 +268,12 @@ if(NonZeroDrainInitCoeff == 1){
 }
 
 results<- data.frame(ClimateSiteID = ClimateSiteID, start = startDate, end = endDate, PETMethod = PETMethod, optimization = optimization,
-                     scrape = scrape, GridMet = GridMet, lon = lon, lat = lat,
+                     GridMet = GridMet, lon = lon, lat = lat,
                      startY = startY, startM = startM, startD = startD, endY = endY, endM = endM, endD = endD,
                      cutoffYear = cutoffYear, NonZeroDrainInitCoeff = NonZeroDrainInitCoeff, incompleteMonths = incompleteMonths)
 
 ### Optimize Water Balance variables according to the NSE of monthly summed measured versus modeled stream flow ###
-if(optimization ==1){
+if(optimization){
   parms<- c(gw_add = gw_add, vfm = vfm, jrange = jrange,hock =  hock, hockros = hockros,dro = dro, mondro = mondro,
             aspect = aspect,slope= slope, shade.coeff= shade.coeff, jtemp = jtemp)
   
@@ -301,7 +303,7 @@ if(optimization ==1){
 }
 
 ### Run the model and save the results with initial/non optimized variables for when not optimizing ###
-if(optimization==0){
+if(!optimization){
   DailyWB<- WB(DailyClimData = DailyClimData, gw_add = gw_add, vfm = vfm, jrange = jrange,
                hock = hock, hockros = hockros, dro = dro, mondro = mondro, aspect = aspect, slope = slope,
                shade.coeff = shade.coeff, jtemp = jtemp,SWC.Max = SWC.Max, 
@@ -317,36 +319,58 @@ if(optimization==0){
                        shade.coeff = shade.coeff, jtemp =jtemp, elpTimeM = NA)
 }
 
-### Preform the second optimization. 
+### Perform the second optimization. 
 # The IHACRES A and B coefficients are optimized according to the NSE of Daily total historic stream flow and daily historic modeled stream flow
-if(optimization ==1){
+if(optimization){
   #Re run the Water Balance model as an input for the second optimization with the optimized water balance variables
   DailyWB<- WB(DailyClimData = DailyClimData, gw_add = gw_add, vfm = vfm, jrange = jrange,
                hock = hock, hockros = hockros, dro = dro, mondro = mondro, aspect = aspect, slope = slope,
                shade.coeff = shade.coeff, jtemp = jtemp,SWC.Max = SWC.Max, Soil.Init = Soil.Init, Snowpack.Init = Snowpack.Init, T.Base = T.Base, PETMethod = PETMethod,lat = lat, lon = lon)
   strtTimeD <-Sys.time()
   
-  #create a grid of values to search from. NSE Daily is calculated at each point in the grid unless told otherwise 
-  #the highest NSE and setting of variables that created it are saved
-  grid = data.frame(expand.grid(qa = seq(0.15, 0.25, 0.01), qb = seq(0.25, 0.35, 0.01),sa = seq(0.25, 0.35, 0.01),
-                                sb = seq(0.35, 0.45, 0.01),va = seq(0.15, 0.25, 0.01)))
+  #set.seed() ensures reproducibility
+  set.seed(123)
+  
+  
   
   #create an empty tibble object for the result of the run to be stored in
   IHcoeffs = tibble()
-  #The percentRedGrid variable is used here to decide how much of the grid to be searched. 
-  samp = floor(nrow(grid)*percentRedGrid)
   
-  #set.seed() ensures reproducibility
-  set.seed(123)
-  redGrid = grid[c(sample(x = 1:nrow(grid), size = samp)),]
-  IHcoeffs<- data.frame(qa = rep(NA, nrow(redGrid)),qb = rep(NA, nrow(redGrid)), sa = rep(NA, nrow(redGrid)),
-                        sb = rep(NA, nrow(redGrid)), va = rep(NA, nrow(redGrid)),
-                        vb = rep(NA, nrow(redGrid)), nseD = rep(NA, nrow(redGrid)))
-  for(i in 1:nrow(redGrid)){
-    IHcoeffs[i,] = IHACRESFlow(q0=q0,s0=s0,v0=v0,qa = redGrid[i,"qa"], qb = redGrid[i,"qb"], sa = redGrid[i,"sa"],
-                               sb = redGrid[i,"sb"], va = redGrid[i,"va"],DailyWB = DailyWB,
-                               Meas_xts = Meas_xts, cutoffYear = cutoffYear)
-    print(i)
+  #create a grid of values to search from. NSE Daily is calculated at each point in the grid unless told otherwise 
+  #the highest NSE is and setting of variables that created it are saved
+  if(flow_components == 3){
+    grid = data.frame(expand.grid(qa = seq(0.15, 0.25, 0.01), qb = seq(0.25, 0.35, 0.01),sa = seq(0.25, 0.35, 0.01),
+                                  sb = seq(0.35, 0.45, 0.01), va = seq(0.15, 0.25, 0.01)))
+    #The percentRedGrid variable is used here to decide how much of the grid to be searched. 
+    samp = floor(nrow(grid)*percentRedGrid)
+    redGrid = grid[c(sample(x = 1:nrow(grid), size = samp)),]
+    IHcoeffs<- data.frame(qa = rep(NA, nrow(redGrid)), qb = rep(NA, nrow(redGrid)),
+                          sa = rep(NA, nrow(redGrid)), sb = rep(NA, nrow(redGrid)), 
+                          va = rep(NA, nrow(redGrid)), vb = rep(NA, nrow(redGrid)), 
+                          nseD = rep(NA, nrow(redGrid)))
+    for(i in 1:nrow(redGrid)){
+      # EDITED THIS FOR QA AND QB
+      IHcoeffs[i,] = IHACRESFlow(q0=q0,s0=s0,v0=v0, qa = redGrid[i,"qa"], qb = redGrid[i,"qb"], 
+                                 sa = redGrid[i,"sa"], sb = redGrid[i,"sb"], 
+                                 va = redGrid[i,"va"], DailyWB = DailyWB,
+                                 Meas_xts = Meas_xts, cutoffYear = cutoffYear)
+      print(i)
+    }
+  } else if (flow_components == 2){
+    grid = data.frame(expand.grid(sa = seq(0, 1, 0.05), sb = seq(0, 1, 0.05), va = seq(0, 1, 0.05)))
+    #The percentRedGrid variable is used here to decide how much of the grid to be searched. 
+    samp = floor(nrow(grid)*percentRedGrid)
+    redGrid = grid[c(sample(x = 1:nrow(grid), size = samp)),]
+    IHcoeffs<- data.frame(sa = rep(NA, nrow(redGrid)), sb = rep(NA, nrow(redGrid)), 
+                          va = rep(NA, nrow(redGrid)), vb = rep(NA, nrow(redGrid)), 
+                          nseD = rep(NA, nrow(redGrid)))
+    for(i in 1:nrow(redGrid)){
+      # EDITED THIS FOR QA AND QB
+      IHcoeffs[i,] = IHACRESFlow(q0=q0,s0=s0,v0=v0, qa = 0, qb = 0, sa = redGrid[i,"sa"],
+                                 sb = redGrid[i,"sb"], va = redGrid[i,"va"],DailyWB = DailyWB,
+                                 Meas_xts = Meas_xts, cutoffYear = cutoffYear)
+      print(i)
+    }
   }
   elpTimeD <- Sys.time() - strtTimeD
   
@@ -363,7 +387,7 @@ if(optimization ==1){
 }
 
 ### Store the results if not optimizing
-if(optimization == 0){
+if(!optimization){
   IHcoeffs = data.frame(qa=NA, qb= NA, sa=NA, sb =NA, va=NA, vb  =NA, nseD = NA)
   IHVars <-  IHACRESFlow(q0 = q0, s0 = s0, v0 = v0, qa = qa, qb = qb, sa = sa, sb = sb,
                          va = va, DailyWB = DailyWB,Meas_xts = Meas_xts, cutoffYear = cutoffYear)
@@ -405,7 +429,7 @@ y<- MeasMod$Meas
 #make Monthly Historic Measured vs Modeled Stream Flow Scatter Plot and save as pdf
 #There are two trend lines because in the scatter plot. 
 #For one, the intercept is set to 0, and in the other, it is allowed to vary
-if(plot == 1){
+if(make_plots){
   #scatter plot
   pdf(file=paste0(outLocationPath, "/", "Monthly_Historic_Measured_Modeled_Scatter.pdf"))
   par(mfrow = c(1,1))
@@ -417,7 +441,7 @@ if(plot == 1){
 
 #make Monthly Historic Measured vs Modeled Stream Flow xts plot and save as pdf
 MeasMod_xts<- xts(MeasMod[,c("Meas", "Mod")], order.by = ym(MeasMod$YrMon))
-if(plot==1){
+if(make_plots){
   pdf(file=paste0(outLocationPath, "/", "Monthly_Measured_and_Modeled_Flow.pdf"))
   par(mfrow = c(2,1))
   print(plot.xts(x = MeasMod_xts$Meas, main = "Monthly Measured Stream Flow"))
@@ -432,7 +456,7 @@ hist_flow<- merge.xts(modeled_xts, Meas_xts)
 hist_flow<- hist_flow[complete.cases(hist_flow),]
 
 #make Daily Historic Measured vs Modeled Stream Flow xts plot and save as pdf
-if(plot==1){
+if(make_plots){
   name = "Measured vs Modeled Historic Daily Stream Flow"
   nameReduce = gsub(pattern = " ",replacement = "_", x = name)
   pdf(file=paste0(outLocationPath, "/", nameReduce, ".pdf"))
@@ -459,7 +483,7 @@ for(i in 1:ncol(hist_flow)){
 }
 
 #make Monthly Historic Stream Flow xts plot and save as pdf
-if(plot==1){
+if(make_plots){
   name = "Monthly Historic Stream Flow"
   nameReduce = gsub(pattern = " ",replacement = "_", x = name)
   pdf(file=paste0(outLocationPath, "/", nameReduce, ".pdf"))
@@ -469,7 +493,7 @@ if(plot==1){
 }
 
 #make Annual Historic Stream Flow xts plot and save as pdf
-if(plot==1){
+if(make_plots){
   name = "Annual Historic Stream Flow"
   nameReduce = gsub(pattern = " ",replacement = "_", x = name)
   pdf(file=paste0(outLocationPath, "/", nameReduce, ".pdf"))
@@ -480,7 +504,7 @@ if(plot==1){
 
 ### Read in future flow from Mike Tercek, use the optimized IHACRES flow coefficients to obtain projected stream flow ###
 # projected future runoff from water balance model using CMIP5 climate projections #
-if(future == 1){
+if(future_analysis){
   fut_ro1 <- read.csv(file.path(dataPath, paste(GaugeSiteID, "watershed_avg_water_balance_future.csv", sep = "_"))) 
   gcms<-unique(fut_ro1$GCM) #all models
 
@@ -578,7 +602,7 @@ if(future == 1){
   
   
   ### Make Daily, Monthly, and Annual xts plots of stream flow
-  if(plot==1){
+  if(make_plots){
     #make Daily Stream Flow xts plot and save as pdf
     name = paste(ClimateSiteID, "Daily Stream Flow")
     nameReduce = gsub(pattern = " ",replacement = "_", x = name)
@@ -626,7 +650,7 @@ if(future == 1){
   }
   
 ### Save optimization data frames and results as RDS files ###
-if(optimization==1){
+if(optimization){
   saveRDS(IHcoeffs, file = paste0(outLocationPath, "/IHcoeffs.rds"))
   saveRDS(WBcoeffs, file = paste0(outLocationPath, "/WBcoeffs.rds"))
 }
