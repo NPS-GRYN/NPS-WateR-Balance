@@ -14,6 +14,7 @@ library(climateR)
 library(EGRET)
 library(daymetr)
 
+
 ### Set path variables and source in files ###
 path<- "C:/Users/mcburns/OneDrive - DOI/water-balance"
 codePath <- file.path(path, 'Code')
