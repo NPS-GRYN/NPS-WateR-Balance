@@ -1,3 +1,10 @@
+# theme for plots
+windowsFonts("Frutiger LT Std 55 Roman" = windowsFont("Frutiger LT Std 55 Roman"))
+nps_theme <- function(base_size = 20, base_family="Frutiger LT Std 55 Roman") {
+  theme_bw(base_size = base_size, base_family = "Frutiger LT Std 55 Roman") %+replace%
+    theme(axis.text.x = element_text(family="Frutiger LT Std 55 Roman", size = base_size * 0.8), complete = TRUE)}
+
+
 #this function checks the validity of date vectors inputted by the user used to make dates
 #it used used inside get_elev_Daymet
 CheckVecDates= function(vec){

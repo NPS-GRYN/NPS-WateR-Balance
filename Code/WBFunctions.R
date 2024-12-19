@@ -116,8 +116,8 @@ get_jtemp = function(lat, lon, j.raster){
 #I created this function. It scrapes the DayMet data and extracts the elevation.
 #Note, if the format of the DayMet data changes, this function may not perform correctly
 #It relies on the elevation being in a specific row and column and having specific text around it
-get_elev_DayMet = function(lat=lat, lon=lon, startY =startY, endY = endY, scrape = scrape, ClimateSiteID_FileName){
-  if(scrape ==1){
+get_elev_DayMet = function(lat=lat, lon=lon, startY =startY, endY = endY, ClimateSiteID_FileName){
+  if(!file.exists(file.path(dataPath, paste0(paste("DayMet", ClimateSiteID_FileName, startY+1,endY, sep = "_"), ".csv")))){
     sites<- data.frame(site = paste("DayMet", ClimateSiteID_FileName, sep = "_"), latitude = lat,longitude = lon)
     write.csv(sites, file =file.path(dataPath,paste0("SiteFile", ClimateSiteID_FileName,".csv")), row.names = F)
     daymetr::download_daymet_batch(file_location = file.path(dataPath,paste0("SiteFile", ClimateSiteID_FileName, ".csv")),
