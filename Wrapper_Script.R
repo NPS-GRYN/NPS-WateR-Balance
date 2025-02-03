@@ -28,12 +28,12 @@ setwd(path)
 ### define the data frame v to hold the variables ###
 v = data.frame(
   #Overall variables
-  FolderName = "TestGridMet" , PETMethod = "Oudin", scrape = 0,optimization = 0 , #keep optimization set to 0 
+  FolderName = "TestGridMet" , PETMethod = "Oudin", optimization = 0 , #keep optimization set to 0 
   NonZeroDrainInitCoeff = 0, incompleteMonths = 1, GridMet = 1, 
   future = 1, fillLeapDays = 1, userSetJTemp = 0, plot = 1, delayStart = 0, percentRedGrid = 0.5,
   
   #Climate Variables
-  ClimateSiteID = "Wet Beaver Creek",lat=34.7,lon=-111.43,GaugeSiteID = "09505200",
+  SiteID = "Wet Beaver Creek",lat=34.7,lon=-111.43,GaugeSiteID = "09505200",
   startY =1979, startM=01, startD=01, endY = 2023, endM = 06, endD = 24,
 
   #adjustment variables
@@ -71,10 +71,10 @@ v[3,"vfm"] = 0.6 # changes the GridMet variable to 0 in the second row
 counter = 1
 for(i in 1: nrow(v)){
 with(v[i,],WaterBalanceDrain(
-  FolderName= FolderName, PETMethod = PETMethod,scrape = scrape,optimization = optimization, 
+  FolderName= FolderName, PETMethod = PETMethod,optimization = optimization, 
   NonZeroDrainInitCoeff = NonZeroDrainInitCoeff,incompleteMonths = incompleteMonths,
   GridMet = GridMet, future = future, fillLeapDays = fillLeapDays, userSetJTemp = userSetJTemp, plot = plot, 
-  delayStart = delayStart, percentRedGrid=percentRedGrid, ClimateSiteID = ClimateSiteID, lat = lat, lon = lon,GaugeSiteID = GaugeSiteID,
+  delayStart = delayStart, percentRedGrid=percentRedGrid, SiteID = SiteID, lat = lat, lon = lon,GaugeSiteID = GaugeSiteID,
   startY = startY, startM = startM, startD = startD,endY = endY, endM = endM, endD = endD, 
   tmmx_slope = tmmx_slope, tmmx_bias = tmmx_bias, tmmn_slope = tmmn_slope, tmmn_bias = tmmn_bias,
   p_slope = p_slope, p_bias =p_bias,

@@ -1,10 +1,10 @@
 
 
-WaterBalanceDrain = function(FolderName, PETMethod, scrape,optimization,
+WaterBalanceDrain = function(FolderName, PETMethod, optimization,
                              cutoffYear, NonZeroDrainInitCoeff,incompleteMonths,
                              GridMet, future, fillLeapDays, userSetJTemp, plot, delayStart, percentRedGrid, 
                              counter= counter,
-                             ClimateSiteID, lat, lon,GaugeSiteID,
+                             SiteID, lat, lon,GaugeSiteID,
                              startY, startM, startD, endY, endM, endD,
                              tmmx_slope, tmmx_bias, tmmn_slope, tmmn_bias, p_slope, p_bias,
                              gw_add, vfm , jrange, jtemp, hock ,hockros,dro,
@@ -23,10 +23,10 @@ WaterBalanceDrain = function(FolderName, PETMethod, scrape,optimization,
   }
   
   #remove spaces for use in file names later
-  ClimateSiteID_FileName = gsub(pattern = " ", x = ClimateSiteID, replacement = "")
+  SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
   
   #get elevation from DayMet data. This happens regardless or whether you use DayMet or GridMet climate data
-  elev = get_elev_DayMet(lat = lat, lon = lon, startY = startY, endY = endY, scrape = scrape, ClimateSiteID_FileName = ClimateSiteID_FileName)
+  elev = get_elev_DayMet(lat = lat, lon = lon, startY = startY, endY = endY, SiteID_FileName = SiteID_FileName)
   
   #get j_temp
   if(userSetJTemp==0){
@@ -55,32 +55,32 @@ WaterBalanceDrain = function(FolderName, PETMethod, scrape,optimization,
   startDate<- ymd(paste(startY, startM, startD))
   endDate<-  ymd(paste(endY, endM, endD))
   
-  #in the code below, if scrape equals 1, the data is scraped and saved as a csv. If scrape equals 0, the csv is read in
+  #in the code below, the data is scraped and saved as a csv if files does not exist already
   if(GridMet == 1){
-    if(scrape == 1){
+    if(file.exists(file.path(dataPath, paste0(paste("GridMet",SiteID_FileName,startY, endY, sep = "_" ), ".csv")))){
       point <- data.frame(lon = lon, lat = lat) %>%
         vect(geom = c("lon", "lat"), crs = "EPSG:4326")
       gridMet_vars <- c("pr", "srad","tmmn", "tmmx", "vpd", "vs")
       DailyClimData <- getGridMET(point,varname = gridMet_vars,startDate = startDate, 
                                   endDate = endDate,verbose = TRUE)
-      write.csv(DailyClimData, file.path(dataPath, paste0(paste("GridMet",ClimateSiteID_FileName,startY, endY, sep = "_" ), ".csv")), row.names = FALSE) 
+      write.csv(DailyClimData, file.path(dataPath, paste0(paste("GridMet",SiteID_FileName,startY, endY, sep = "_" ), ".csv")), row.names = FALSE) 
     }else{
-      DailyClimData = read.csv(file.path(dataPath, paste0(paste("GridMet",ClimateSiteID_FileName,startY, endY, sep = "_" ), ".csv")))
+      DailyClimData = read.csv(file.path(dataPath, paste0(paste("GridMet",SiteID_FileName,startY, endY, sep = "_" ), ".csv")))
     }
-  }else{if(scrape==1){
-    daymetr::download_daymet_batch(file_location = file.path(dataPath,paste0("SiteFile", ClimateSiteID_FileName, ".csv")),
+  }else{if(file.exists(file.path(dataPath, paste0(paste("DayMet", SiteID_FileName, startY+1,endY, sep = "_"), ".csv")))){
+    daymetr::download_daymet_batch(file_location = file.path(dataPath,paste0("SiteFile", SiteID_FileName, ".csv")),
                                    start = startY+1,
                                    end = endY,
                                    internal = FALSE,
                                    path=dataPath)
-    DailyClimData<- read.csv(file.path(dataPath, paste0(paste("DayMet", ClimateSiteID_FileName, startY+1,endY, sep = "_"), ".csv")), skip = 6, header = TRUE, sep = ",")
+    DailyClimData<- read.csv(file.path(dataPath, paste0(paste("DayMet", SiteID_FileName, startY+1,endY, sep = "_"), ".csv")), skip = 6, header = TRUE, sep = ",")
   }else{
-    DailyClimData<- read.csv(file.path(dataPath, paste0(paste("DayMet", ClimateSiteID_FileName, startY+1,endY, sep = "_"), ".csv")), skip = 6, header = TRUE, sep = ",")
+    DailyClimData<- read.csv(file.path(dataPath, paste0(paste("DayMet", SiteID_FileName, startY+1,endY, sep = "_"), ".csv")), skip = 6, header = TRUE, sep = ",")
   }}
   
   # scrape stream gauge data
-  #If scrape equals 1, the data is scraped and saved as a csv. If scrape equals 0, the csv is read in
-  if(scrape == 1){
+  # the data is scraped and saved as a csv if the file does not exist already
+  if(!file.exists(file.path(dataPath, paste0(paste("USGS_Gauge",GaugeSiteID, startY+1,endY, sep = "_"), ".csv")))){
     DailyStream <- EGRET::readNWISDaily(siteNumber = GaugeSiteID, parameterCd = "00060", 
                                         startDate = startDate, endDate = endDate) |>
       dplyr::filter(grepl('A', Qualifier)) |> #this filters for any Qualifier that has an A. It will return A and A:E
@@ -201,8 +201,8 @@ WaterBalanceDrain = function(FolderName, PETMethod, scrape,optimization,
     v0 = InitCond[["Very_Slow"]]
   }
   
-  results<- data.frame(ClimateSiteID = ClimateSiteID, start = startDate, end = endDate, PETMethod = PETMethod, optimization = optimization,
-                       scrape = scrape, GridMet = GridMet, lon = lon, lat = lat,
+  results<- data.frame(SiteID = SiteID, start = startDate, end = endDate, PETMethod = PETMethod, optimization = optimization,
+                       GridMet = GridMet, lon = lon, lat = lat,
                        startY = startY, startM = startM, startD = startD, endY = endY, endM = endM, endD = endD,
                        cutoffYear = cutoffYear, NonZeroDrainInitCoeff = NonZeroDrainInitCoeff, incompleteMonths = incompleteMonths)
   
@@ -308,8 +308,8 @@ WaterBalanceDrain = function(FolderName, PETMethod, scrape,optimization,
   
   ##### Historic flow plots #####
   #create the necessary directories and directory variables
-  dir.create(file.path(outPath, ClimateSiteID_FileName))
-  locationPath = file.path(outPath, ClimateSiteID_FileName)
+  dir.create(file.path(outPath, SiteID_FileName))
+  locationPath = file.path(outPath, SiteID_FileName)
   dir.create(file.path(locationPath, FolderName))
   outLocationPath = file.path(locationPath, FolderName)
   
@@ -516,7 +516,7 @@ WaterBalanceDrain = function(FolderName, PETMethod, scrape,optimization,
     ### Make Daily, Monthly, and Annual xts plots of stream flow
     if(plot==1){
       #make Daily Stream Flow xts plot and save as pdf
-      name = paste(ClimateSiteID, "Daily Stream Flow")
+      name = paste(SiteID, "Daily Stream Flow")
       nameReduce = gsub(pattern = " ",replacement = "_", x = name)
       pdf(file=paste0(outLocationPath, "/", nameReduce, ".pdf"))
       par(mfrow = c(1,1))
@@ -527,7 +527,7 @@ WaterBalanceDrain = function(FolderName, PETMethod, scrape,optimization,
       dev.off()
       
       #make monthly Stream Flow xts plot and save as pdf
-      name = paste(ClimateSiteID, "Monthly Stream Flow")
+      name = paste(SiteID, "Monthly Stream Flow")
       nameReduce = gsub(pattern = " ",replacement = "_", x = name)
       pdf(file=paste0(outLocationPath, "/", nameReduce, ".pdf"))
       par(mfrow = c(1,1))
@@ -538,7 +538,7 @@ WaterBalanceDrain = function(FolderName, PETMethod, scrape,optimization,
       dev.off()
       
       #make annual Stream Flow xts plot and save as pdf
-      name = paste(ClimateSiteID, "Annual Stream Flow")
+      name = paste(SiteID, "Annual Stream Flow")
       nameReduce = gsub(pattern = " ",replacement = "_", x = name)
       pdf(file=paste0(outLocationPath, "/", nameReduce, ".pdf"))
       par(mfrow = c(1,1))
@@ -549,7 +549,7 @@ WaterBalanceDrain = function(FolderName, PETMethod, scrape,optimization,
       dev.off()
       
       #  make annual plot where all gcms go on same plot
-      name = paste(ClimateSiteID, "Combined Plot Annual Stream Flow")
+      name = paste(SiteID, "Combined Plot Annual Stream Flow")
       nameReduce = gsub(pattern = " ",replacement = "_", x = name)
       pdf(file=paste0(outLocationPath, "/", nameReduce, ".pdf"))
       par(mfrow = c(1,1))

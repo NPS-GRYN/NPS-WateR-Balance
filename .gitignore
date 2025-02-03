@@ -2,9 +2,9 @@
 .Rhistory
 .RData
 .Ruserdata
-.Output
-.Data/09505200_watershed_avg_water_balance_future.csv
-.Data/DayMet_WetBeaverCreek_1980_2023.csv
-.Data/GridMet_WetBeaverCreek_1979_2023.csv
-.Data/SiteFileWetBeaverCreek.csv
-.Data/USGS_Gauge_09505200_1980_2023.csv
+.Output/
+.Data/
+./RWaterBalanceGuide.docx
+./RWaterBalanceGuide_old.docx
+./WB_Notes.docx
+./RExcelCrossCheckWetBeaver/ExcelRBeaverCreekValidation.docx

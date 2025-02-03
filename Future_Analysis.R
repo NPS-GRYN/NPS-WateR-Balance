@@ -1,172 +1,306 @@
-## GENERATE FUTURE PROJECTIONS OF STREAMFLOW ##
-library(ggrepel)
+# ---------------------------------------------------------------------
+# This script includes code to generate future projections of streamflow using the IHACRES 
+# rainfall-streamflow methodology. This requires future projections of adjusted runoff,
+# which are either calculated using pre-calibrated coefficients or pulled from a pre-generated
+# gridded water balance model produced/maintained by Mike Tercek. This code also provides 
+# preliminary visualizations of these future streamflow projections. 
+# ---------------------------------------------------------------------
 
 
-fut_ro1 <- read.csv(file.path(dataPath, paste(GaugeSiteID, "watershed_avg_water_balance_future.csv", sep = "_"))) 
-gcms<-unique(fut_ro1$GCM) #all models
+# CHANGE RUN TO PROJECTION AND GCM/RCP to respective
 
-#drop "MIROC-ESM-CHEM.rcp85" because it doesn't have an associated RCP 4.5
-fut_ro1<-subset(fut_ro1, GCM !="MIROC-ESM-CHEM.rcp85")
-gcms<-unique(fut_ro1$GCM)
+#######################################################################
+### GENERATE FUTURE WATER BALANCE MODELS ###
+gcm_list <- c('BNU-ESM', 'CCSM4', 'CNRM-CM5', 'CSIRO-Mk3-6-0', 'CanESM2','GFDL-ESM2G', 'HadGEM2-CC365', 
+              'IPSL-CM5A-LR', 'MIROC5', 'MIROC-ESM-CHEM','MRI-CGCM3', 'NorESM1-M', 'inmcm4')
 
-#use the first model type to grab the dates
-fut_ro_date<-subset(fut_ro1, GCM == gcms[1]);head(fut_ro_date);tail(fut_ro_date)
-fut_date<-as.Date(fut_ro_date$Date);fut_date#format needed for working with xts
-df_date<-as.data.frame(fut_date)#format needed for use with data frames
+### Use Mike Tercek's pre-generated gridded water balance model for future projections ###
+if(!runFutureWB){
+  if(file.exists(file.path(dataPath, paste("WB",SiteID_FileName,"2023_2100.csv", sep = "_")))){
+    future_wb <- read.csv(file.path(dataPath, paste("WB",SiteID_FileName,"2023_2100.csv", sep = "_"))) 
+    future_wb$Date <- as.Date(future_wb$Date, '%m/%d/%Y')
+    future_wb<-subset(future_wb, projection !="MIROC-ESM-CHEM.rcp85")   # drop "MIROC-ESM-CHEM.rcp85" because it doesn't have an associated RCP 4.5
+    
+    #convert to mm and fix column names
+    future_wb<-cbind(future_wb[,c("Date","projection")], 25.4*(future_wb[,c(which(colnames(future_wb)=="Deficit.in"):ncol(future_wb))]))
+    colnames(future_wb)<- c("Date", "projection", "Deficit", "AET", "soil_water", "runoff", "rain", "accumswe", "PET")
+    
+    #adjust for ground water addition and volume forcing multiplier
+    future_wb$adj_runoff<- get_adj_runoff(future_wb$runoff, gw_add = gw_add, vfm = vfm)
+  } else{
+    DataDownLoad(datapath, 'gridMET', model_wc_rcp,model_wc,model_bc,model_bc_rcp, SiteID_FileName, lat, lon, startY, endY, 2099, endY)
+  }
+}
 
-#define the length of the future data in days
-d<-length(fut_date)
-futures<-NULL #empty object to hold data after modeled runoff converted to modeled stream flow
 
-# j iterates over the models, i is being defined in the drain function and iterates over days
+### Re-run water balance model to generate future projections ###
+if(runFutureWB){
+  # Pull future meteorological data
+  if(!file.exists(here('Data',SiteID_FileName,paste('MACA',SiteID_FileName, endY, '2100.csv', sep='_')))){
+    # Pull data
+    point <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
+    future_climate_data <- getMACA(point, c('tasmin','tasmax','pr','rsds','vpd','vas','uas'), timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'), 
+                                   startDate = '2023-01-01', endDate = '2099-12-31')
+    
+    # Clean and compile data
+    precip<-NULL; tasmin<-NULL; tasmax<-NULL; rsds<-NULL; vpd<-NULL; vas<-NULL; uas<-NULL 
+    for(i in 2:length(colnames(future_climate_data))){
+      split_colnames <- strsplit(colnames(future_climate_data[i]), "_")
+      combine <- data.frame(date=future_climate_data[,1], GCM=split_colnames[[1]][2], RCP=split_colnames[[1]][4],
+                            var=future_climate_data[,i])
+      if(split_colnames[[1]][1] == 'pr') {precip <- rbind(precip, combine)}
+      if(split_colnames[[1]][1] == 'tasmin') {tasmin <- rbind(tasmin, combine)}
+      if(split_colnames[[1]][1] == 'tasmax') {tasmax <- rbind(tasmax, combine)}
+      if(split_colnames[[1]][1] == 'rsds') {rsds <- rbind(rsds, combine)}
+      if(split_colnames[[1]][1] == 'vpd') {vpd <- rbind(vpd, combine)}
+      if(split_colnames[[1]][1] == 'vas') {vas <- rbind(vas, combine)}
+      if(split_colnames[[1]][1] == 'uas') {uas <- rbind(uas, combine)}
+    }
+    colnames(precip) <- c('date','GCM','RCP','pr'); colnames(tasmin) <- c('date','GCM','RCP','tmmn'); colnames(tasmax) <- c('date','GCM','RCP','tmmx')
+    colnames(rsds) <- c('date','GCM','RCP','srad'); colnames(vpd) <- c('date','GCM','RCP','vpd'); colnames(vas) <- c('date','GCM','RCP','vas'); colnames(uas) <- c('date','GCM','RCP','uas')
+
+    future_climate <- Reduce(function(x, y) merge(x, y, by = c('date', 'GCM', 'RCP'), all = TRUE), list(precip, tasmin, tasmax, rsds, vpd, vas, uas))
+    
+    future_climate$tmmn <- future_climate$tmmn - 273.15; future_climate$tmmx <- future_climate$tmmx - 273.15
+    future_climate$vs <- sqrt(future_climate$vas^2 + future_climate$uas^2)
+    future_climate <- future_climate %>% mutate(projection = paste0(GCM, '.', RCP))
+    future_climate <- future_climate %>% select(-vas, -uas, -GCM, -RCP)
+    future_climate <- future_climate[,c('projection','date','pr','srad','tmmn','tmmx','vs','vpd')]
+    
+    # Save
+    write.csv(future_climate, file = here('Data', SiteID_FileName, paste('MACA',SiteID_FileName,endY,'2100.csv', sep='_')), row.names = FALSE)
+  }
+  
+  # Run WB code for each future model projection
+  if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))){
+    future_climate <- read.csv(here('Data',SiteID_FileName,paste('MACA',SiteID_FileName, '2023_2100.csv', sep='_')))
+    future_climate$date <- as.Date(future_climate$date)
+
+    future_wb_calc <- NULL
+    for(run in unique(future_climate$projection)){
+      ClimData <- future_climate %>% filter(projection==run) %>% select(-projection)
+      DailyWB_future <- WB(ClimData, gw_add, vfm, jrange, hock, hockros, dro, mondro, aspect, slope,
+                           shade.coeff, jtemp, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon)
+      DailyWB_future <- cbind(run, DailyWB_future)  
+      future_wb_calc <- rbind(future_wb_calc, DailyWB_future)
+    }
+    # Save calculated WB results
+    write.csv(future_wb_calc, here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')), row.names=FALSE)
+  }
+  
+  future_wb <- read.csv(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))
+  future_wb <- future_wb %>% rename(Date = date)
+  future_wb$Date <- as.Date(future_wb$Date, '%m/%d/%Y')
+}
+
+
+### Compare the two future water balance projections, just for fun ###
+if(runFutureWB){
+  if(file.exists(file.path(dataPath, paste("WB",SiteID_FileName,"2023_2100.csv", sep = "_")))){
+    # read in gridded WB projections
+    future_wb_grid <- read.csv(file.path(dataPath, paste("WB",SiteID_FileName,"2023_2100.csv", sep = "_"))) 
+    future_wb_grid$Date <- as.Date(future_wb_grid$Date, '%m/%d/%Y')
+    future_wb_grid<-subset(future_wb_grid, projection !="MIROC-ESM-CHEM.rcp85")   # drop "MIROC-ESM-CHEM.rcp85" because it doesn't have an associated RCP 4.5
+    gcms<-unique(future_wb_grid$projection)
+    future_wb_grid<-cbind(future_wb_grid[,c("Date","projection")], 25.4*(future_wb_grid[,c(which(colnames(future_wb_grid)=="Deficit.in"):ncol(future_wb_grid))]))
+    colnames(future_wb_grid)<- c("Date", "projection", "Deficit", "AET", "soil_water", "runoff", "rain", "accumswe", "PET")
+    future_wb_grid$adj_runoff<- get_adj_runoff(future_wb_grid$runoff, gw_add = gw_add, vfm = vfm)
+    
+    # read in calculated WB projections
+    future_wb_calc <- read.csv(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))
+    future_wb_calc <- future_wb_calc %>% rename(Date = date)
+    future_wb_calc$Date <- as.Date(future_wb_calc$Date, '%m/%d/%Y')
+    
+    # plot AET, deficit, adj runoff for a sample year and a sample model
+    model_run = 'HadGEM2-CC365.rcp45'; yr = 2060
+    if(make_plots){
+      plot_aet <- ggplot() + geom_line(data=future_wb_grid %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=AET), col='black')+
+        geom_line(data=future_wb_calc %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=AET), col='red')+
+        labs(x='Date',y='AET [mm]', title='Actual Evapotranspiration') +
+        theme(legend.position = "none") + nps_theme()
+      plot_d <- ggplot() + geom_line(data=future_wb_grid %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=Deficit), col='black')+
+        geom_line(data=future_wb_calc %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=D), col='red')+
+        labs(x='Date',y='Deficit [mm]', title='Deficit') +
+        theme(legend.position = "none") + nps_theme()
+      plot_run <- ggplot() + geom_line(data=future_wb_grid %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=adj_runoff, col='Gridded WB'))+
+        geom_line(data=future_wb_calc %>% filter(projection==model_run& year(Date)==yr), aes(x=Date, y=adj_runoff, col='Calculated WB'))+
+        labs(x='Date',y='Adjusted Runoff [mm]', title='Adjusted Runoff') +  
+        scale_color_manual(values = c("Gridded WB"="black", "Calculated WB"="red"), name="WB Projections") + nps_theme()
+      
+      nameReduce = gsub(pattern = " ",replacement = "_", x = paste(SiteID, "Future WB Projection Comparison"))
+      jpeg(file=paste0(outLocationPath, "/", nameReduce, ".jpg"), width=2000, height=600)
+      grid.arrange(plot_aet, plot_d, plot_run, ncol = 3, widths=c(1,1,1.3), top = textGrob(paste('WB Projection Comparisons for', model_run, ':', yr),gp=gpar(fontsize=30)))
+      dev.off() 
+    }
+  } else{print("Cannot compare future water balances: pre-calculated gridded water balance file does not exist.")}
+}
+
+
+
+#######################################################################
+### GENERATE FUTURE STREAMFLOW PROJECTIONS ###
+
+### Run DailyDrain for each future projection ###
+gcms<-unique(future_wb$projection)
+futures <- NULL
 for (j in 1:length(gcms)){
-  #subset for one model
-  fut_ro<-subset(fut_ro1, GCM == gcms[j])
-  print(gcms[j])
-  
-  #convert to mm and fix column names
-  fut_ro<-cbind(fut_ro[,c("Date","GCM")], 25.4*(fut_ro[,c(which( colnames(fut_ro)=="Deficit.in"):ncol(fut_ro))])) #grabs all columns to the from deficit to the end
-  colnames(fut_ro)<- c("Date", "GCM", "Deficit", "AET", "soil_water", "runoff", "rain", "accumswe", "PET")
-  
-  #adjust for ground water addition and volume forcing multiplier
-  fut_ro$adj_runoff<- get_adj_runoff(fut_ro$runoff, gw_add = gw_add, vfm = vfm)
-  
-  #create a data frame for the Drain function
-  data = data.frame(fut_ro$adj_runoff)
-  colnames(data) = c("adj_runoff")
+  #subset one model
+  fut_ro <- subset(future_wb, projection == gcms[j]); print(gcms[j])
+  data <- data.frame(fut_ro$adj_runoff)
+  colnames(data) <- c("adj_runoff")
   
   #run the Drain function
-  DailyDrainFuture <- Drain(DailyWB = data, q0 = q0, qa = qa, qb = qb, s0 = s0, sa = sa, sb = sb, v0 = v0, va = va, vb = vb)
+  DailyDrainFuture <- Drain(data, q0, qa, qb, s0, sa, sb, v0, va, vb)
   
-  #save this model run to futures
-  drainage_qsvt <- cbind(gcms[j],df_date,DailyDrainFuture)
-  colnames(drainage_qsvt)[] <- c("model","date","adj_runoff","quick","slow","veryslow","total")
-  futures<-rbind(futures, drainage_qsvt)#stack results from each model into a heap for plotting
+  # Save streamflow projection to futures dataframe
+  drainage_qsvt <- cbind(gcms[j], fut_ro$Date, DailyDrainFuture)
+  colnames(drainage_qsvt)[] <- c("projection","date","adj_runoff","quick","slow","veryslow","total")
+  futures <-rbind(futures, drainage_qsvt)
 }
-#filter out futures that are overlapping with the date of the historic flow
+
+# Filter out futures that overlap with the date of the historic flow, extract GCM and RCP
 futures<- futures[futures$date>endDate,]
+futures$gcm <- sapply(X = strsplit(futures$projection, split=".rcp"), FUN = "[", 1) 
+futures$rcp <- as.numeric(x = sapply(strsplit(futures$projection, split=".rcp"), FUN = "[", 2)) 
 
-#add the yr_mo and yr columns to futures
-futures$yr<-format(as.Date(futures$date),"%Y")
-futures$mo<-format(as.Date(futures$date),"%m")
-futures$yr_mo<-format(as.Date(futures$date),"%Y-%m")
 
-# reorder columns to match order of column in projections  
-futures<-futures[,c("model", "date", "yr", "mo", "yr_mo", 
-                    "adj_runoff", "quick", "slow", "veryslow", "total")]
 
-#extract gcm and rcp and create compiled
-base<-strsplit(futures$model, split=".rcp")
-gcm <- sapply(X = base, FUN = "[", 1) 
-rcp <- as.numeric(x = sapply(base, FUN = "[", 2)) 
-future<-cbind(gcm, rcp, futures[,which(colnames(futures)=="date"):ncol(futures)]) 
-colnames(DailyHistFlow)[colnames(DailyHistFlow) == 'model'] <- 'gcm'
-DailyHistFlow$rcp<-NA
-#reorder the columns to have gcm, rcp, and then date through total
-DailyHistFlow<-DailyHistFlow[,c(which(colnames(DailyHistFlow)=="gcm"), 
-                                which(colnames(DailyHistFlow)=="rcp"),
-                                which(colnames(DailyHistFlow)=="date"):which(colnames(DailyHistFlow)=="total"))] 
-compiled<-rbind(DailyHistFlow, future)
+#######################################################################
+### COMPILE FUTURE AND HISTORICAL PROJECTIONS ###
 
-#daily data frame
-hist<-subset(compiled, gcm == "Historic")
-hist$rcp<-"Hist"
-fut<-subset(compiled, gcm!="Historic")
+# Get historical model projections
+hist_flow_mod <- data.frame(date=DailyDrain$date, adj_runoff=DailyDrain$adj_runoff, quick=DailyDrain$Quick,
+                            slow=DailyDrain$Slow, veryslow=DailyDrain$Very_Slow, total=DailyDrain$total, 
+                            projection = rep('Historical', length(DailyDrain$date)), gcm=rep('Historical', length(DailyDrain$date)), rcp=rep('Hist', length(DailyDrain$date)))
 
-#delete then rebuild compiled with rcp values
-daily_df<-as.data.frame(rbind(hist,fut))
-daily_df$Period<-ifelse(daily_df$yr<=2022,"Historical",
-                                   ifelse (daily_df$yr>=2023 & daily_df$yr<=2050,"Early",
-                                           ifelse (daily_df$yr>=2051 & daily_df$yr<=2070,"Middle",
-                                                   ifelse (daily_df$yr>=2071, "Late","NA"))))
-daily_df$yr<-as.numeric(daily_df$yr)
 
-#annual data frame
+# Combine historical and future model projections
+daily_df<-rbind(futures, hist_flow_mod)
+daily_df$date <- as.Date(daily_df$date); daily_df$yr<-as.numeric(format(daily_df$date,"%Y")); daily_df$mo<-format(daily_df$date,"%m"); daily_df$yr_mo<-format(daily_df$date,"%Y-%m")
+daily_df<-daily_df[,c("date", "projection", "gcm", "rcp", "yr", "mo", "yr_mo", "adj_runoff", "quick", "slow", "veryslow", "total")]
+daily_df$Period<-ifelse(daily_df$yr<=2022,"Historical",ifelse (daily_df$yr>=2023 & daily_df$yr<=2050,"Early",
+                                           ifelse (daily_df$yr>=2051 & daily_df$yr<=2070,"Middle", ifelse (daily_df$yr>=2071, "Late","NA"))))
+
+# Aggregate data to annual
 annual_df <- as.data.frame(daily_df %>% group_by(gcm, rcp, yr) %>%
-  dplyr::summarize(adj_runoff = sum(adj_runoff, na.rm = TRUE),quick = sum(quick, na.rm = TRUE),
+  dplyr::summarize(projection=first(projection), gcm=first(gcm), rcp=first(rcp), adj_runoff = sum(adj_runoff, na.rm = TRUE),quick = sum(quick, na.rm = TRUE),
                    slow = sum(slow, na.rm = TRUE),veryslow = sum(veryslow, na.rm = TRUE), total = sum(total, na.rm = TRUE), 
                    Period=first(Period)))
-#create a time index by forcing month and day to be Jan 1st
 annual_df$date<-as.Date(paste(annual_df$yr,"-01", "-01",sep=""))
 
-#monthly data frame
-monthly_df <- as.data.frame(daily_df %>%
-  group_by(gcm,rcp, yr_mo) %>%
-  dplyr::summarize(adj_runoff = sum(adj_runoff, na.rm = TRUE),quick = sum(quick, na.rm = TRUE),
+# Aggregate data to monthly 
+monthly_df <- as.data.frame(daily_df %>% group_by(gcm,rcp, yr_mo) %>%
+  dplyr::summarize(projection=first(projection), gcm=first(gcm), rcp=first(rcp), adj_runoff = sum(adj_runoff, na.rm = TRUE),quick = sum(quick, na.rm = TRUE),
                    slow = sum(slow, na.rm = TRUE),veryslow = sum(veryslow, na.rm = TRUE) ,total = sum(total, na.rm = TRUE),
                    Period=first(Period)))
-#create a time index by forcing month and day to be Jan 1st
 monthly_df$date<-as.Date(paste(monthly_df$yr_mo,"-01",sep=""))
 
+# Mean of future daily streamflow projections
+mean_daily_df <- daily_df %>% filter(projection!='Historical') %>% group_by(date) %>% dplyr::summarize(mean_total=mean(total))
 
-### Make Daily, Monthly, and Annual xts plots of stream flow
+
+
+#######################################################################
+### PLOT FUTURE STREAMFLOW ### 
+
 if(make_plots){
-  #make Daily Stream Flow xts plot and save as pdf
-  name = paste(ClimateSiteID, "Daily Stream Flow")
+  # Daily streamflow projections for all models
+  name = paste(SiteID, "Daily Streamflow")
   nameReduce = gsub(pattern = " ",replacement = "_", x = name)
-  pdf(file=paste0(outLocationPath, "/", nameReduce, ".pdf"))
-  par(mfrow = c(1,1))
-  plot<-ggplot(data = daily_df) + geom_line(aes(x=date, y = total, colour= rcp))+
-    facet_wrap(~gcm)+ ylab("Stream flow (mm)") + xlab("Day")+
-    ggtitle(name)
-  dev.off()
+  jpeg(file=paste0(outLocationPath, "/", nameReduce, ".jpg"), width=1300, height=800)
+  plot<- ggplot() + geom_line(data=daily_df %>% filter(rcp!="Hist"), aes(x = date, y = total, color = 'Future')) + 
+    facet_wrap(~projection, ncol=6)+ ylab("Streamflow (mm)") + xlab("Year")+ ggtitle(name) + nps_theme() +
+    geom_line(data=daily_df %>% filter(rcp=="Hist")%>% select(-projection), aes(x = date, y = total, color=Period)) + 
+    scale_color_manual(values = c( "Historical" = "blue", "Future" = "black"), limits=c('Historical','Future'), name = "Period")
   print(plot)
-  
-  #make monthly Stream Flow xts plot and save as pdf
-  name = paste(ClimateSiteID, "Monthly Stream Flow")
-  nameReduce = gsub(pattern = " ",replacement = "_", x = name)
-  pdf(file=paste0(outLocationPath, "/", nameReduce, ".pdf"))
-  par(mfrow = c(1,1))
-  plot<-ggplot(data = monthly_df) + geom_line(aes(x=date, y = total, colour= rcp))+
-    facet_wrap(~gcm)+ ylab("Stream flow (mm)") + xlab("Month")+
-    ggtitle(name)
   dev.off()
-  print(plot)
   
-  #make annual Stream Flow xts plot and save as pdf
-  name = paste(ClimateSiteID, "Annual Stream Flow")
+  # Monthly streamflow projections for all models
+  name = paste(SiteID, "Monthly Streamflow")
   nameReduce = gsub(pattern = " ",replacement = "_", x = name)
-  pdf(file=paste0(outLocationPath, "/", nameReduce, ".pdf"))
-  par(mfrow = c(1,1))
-  plot<-ggplot(data = annual_df) + geom_line(aes(x=date, y = total, colour= rcp))+
-    facet_wrap(~gcm)+ ylab("Stream flow (mm)") + xlab("Year")+
-    ggtitle(name)
+  jpeg(file=paste0(outLocationPath, "/", nameReduce, ".jpg"), width=1300, height=800)
+  plot<- ggplot() + geom_line(data=monthly_df %>% filter(rcp!="Hist"), aes(x = date, y = total, color = 'Future')) + 
+    facet_wrap(~projection, ncol=6)+ ylab("Streamflow (mm)") + xlab("Year")+ ggtitle(name) + nps_theme() +
+    geom_line(data=monthly_df %>% filter(rcp=="Hist")%>% select(-projection), aes(x = date, y = total, color=Period)) + 
+    scale_color_manual(values = c( "Historical" = "blue", "Future" = "black"), limits=c('Historical','Future'), name = "Period")
+  print(plot)
   dev.off()
-  print(plot)
   
-  #  make annual plot where all gcms go on same plot
-  name = paste(ClimateSiteID, "Combined Plot Annual Streamflow")
+  # Annual streamflow projections for all models
+  name = paste(SiteID, "Annual Streamflow")
   nameReduce = gsub(pattern = " ",replacement = "_", x = name)
-  pdf(file=paste0(outLocationPath, "/", nameReduce, ".pdf"))
-  par(mfrow = c(1,1))
-  plot<-ggplot(data = annual_df) + geom_line(aes(x=date, y = total, colour= gcm))+
-    facet_wrap(~rcp)+ ylab("Stream flow (mm)") + xlab("Year")+
-    ggtitle(name)
+  jpeg(file=paste0(outLocationPath, "/", nameReduce, ".jpg"), width=1300, height=800)
+  plot<- ggplot() + geom_line(data=annual_df %>% filter(rcp!="Hist"), aes(x = date, y = total, color = 'Future')) + 
+    facet_wrap(~projection, ncol=6)+ ylab("Streamflow (mm)") + xlab("Year")+ ggtitle(name) + nps_theme() +
+    geom_line(data=annual_df %>% filter(rcp=="Hist")%>% select(-projection), aes(x = date, y = total, color=Period)) + 
+    scale_color_manual(values = c( "Historical" = "blue", "Future" = "black"), limits=c('Historical','Future'), name = "Period")
+  print(plot)
   dev.off()
-  print(plot)
   
-  # scatter plot of annual magnitude vs daily standard deviation
-  name = paste(ClimateSiteID, "Streamflow Climate Future Scatterplot")
+
+  # Time series of daily, monthly, annual streamflow
+  plot_daily <- ggplot() + labs(title='Daily Modeled Streamflow', x='Year', y='Streamflow [mm]', color='Model') + nps_theme() + 
+    geom_line(data=(daily_df %>% filter(projection!='Historical')), aes(x=date, y=total), col='gray', alpha = 0.7) + 
+    geom_line(data=(daily_df %>% filter(projection=='Historical')), aes(x=date, y=total), col='blue',alpha=1, linewidth=1.5) +
+    geom_line(data=daily_df %>% filter(projection!='Historical') %>% group_by(date) %>% dplyr::summarize(mean_total=mean(total)), 
+              aes(x=date, y=mean_total), col='black', alpha=1, linewidth=1.5) + 
+    guides(alpha = "none") + theme(legend.position="none")
+  plot_mon <-  ggplot() + labs(title='Monthly Modeled Streamflow', x='Year', y='Streamflow [mm]', color='Model') + nps_theme() + 
+    geom_line(data=(monthly_df %>% filter(projection!='Historical')), aes(x=date, y=total), col='gray', alpha = 0.7) + 
+    geom_line(data=(monthly_df %>% filter(projection=='Historical')), aes(x=date, y=total), col='blue', alpha=1, linewidth=1.5) +
+    geom_line(data=monthly_df %>% filter(projection!='Historical') %>% group_by(date) %>% dplyr::summarize(mean_total=mean(total)), 
+              aes(x=date, y=mean_total), col='black',alpha=1, linewidth=1.5) + 
+    guides(alpha = "none") + theme(legend.position="none")
+  plot_ann <-  ggplot() + labs(title='Annual Modeled Streamflow', x='Year', y='Streamflow [mm]', color='Model') + nps_theme() + 
+    geom_line(data=(annual_df %>% filter(projection!='Historical')), aes(x=date, y=total, col='Individual Model Projections'), alpha = 0.7) + 
+    geom_line(data=(annual_df %>% filter(projection=='Historical')), aes(x=date, y=total, col='Historical'), alpha=1, linewidth=1.5) +
+    geom_line(data=annual_df %>% filter(projection!='Historical') %>% group_by(date) %>% dplyr::summarize(mean_total=mean(total)), 
+              aes(x=date, y=mean_total, col='Mean Model Projections'), alpha=1, linewidth=1.5) + 
+    scale_color_manual(values = c('Historical'='blue', "Individual Model Projections" = "gray", 'Mean Model Projections'="black"),
+                       labels= c(expression('Historical', "Individual\nModel Projections"), expression('Mean Model\nProjections'))) + 
+    guides(alpha = "none") 
+  nameReduce = gsub(pattern = " ",replacement = "_", x = paste(SiteID, "Streamflow Projections Time Series"))
+  jpeg(file=paste0(outLocationPath, "/", nameReduce, ".jpg"), width=2000, height=600)
+  grid.arrange(plot_daily, plot_mon, plot_ann, ncol = 3, widths=c(1,1,1.3))
+  dev.off()
+  
+  
+  # Time series of all the models together, with user-specified individual models in bold
+  name = paste(SiteID, "Annual Streamflow Projections Time Series")
   nameReduce = gsub(pattern = " ",replacement = "_", x = name)
-  pdf(file=paste0(outLocationPath, "/", nameReduce, ".pdf"))
-  par(mfrow = c(1,1))
-  annual_df$delta_annual_mm <- annual_df$total - mean((annual_df %>% filter(gcm=='Historic'))$total)
+  jpeg(file=paste0(outLocationPath, "/", nameReduce, ".jpg"), width=1300, height=800)
+  plot <- ggplot() + labs(title=paste(SiteID, 'Annual Streamflow Projections Time Series'), y='Streamflow [mm]', x='Years', color='Model') +  
+    geom_line(data=(annual_df %>% filter(projection=='Historical')), aes(x=yr, y=total, group=projection, color=ifelse(projection=='Historical', 'Historical', projection)), alpha=1, linewidth=1.5) + 
+    geom_line(data=(annual_df %>% filter(!projection %in% individual_models)), aes(x=yr, y=total, group = projection, color=ifelse(projection %in% individual_models, projection, "Other")), alpha = 0.7) + 
+    geom_line(data=(annual_df %>% filter(projection %in% individual_models)), aes(x=yr, y=total, group=projection, color=ifelse(projection %in% individual_models, projection, "Other")), alpha=1, linewidth=1.5) +
+    scale_color_manual(values = c("Other" = "gray", 'Historical'='blue', setNames(sample(colors(), length(individual_models)), individual_models))) +
+    guides(alpha = "none") + nps_theme()
+  print(plot)
+  dev.off()
+  
+  
+  # Climate future scatterplot: annual magnitude vs daily standard deviation
+  name = paste(SiteID, "Streamflow Climate Future Scatterplot")
+  nameReduce = gsub(pattern = " ",replacement = "_", x = name)
+  annual_df$delta_annual_mm <- annual_df$total - mean((annual_df %>% filter(gcm=='Historical'))$total)
   delta_plot <- daily_df %>% group_by(gcm, rcp, yr) %>% 
-    dplyr::summarize(Period=first(Period), delta_daily_sd = sd(total)-sd((daily_df %>% filter(gcm=='Historic'))$total))
+    dplyr::summarize(Period=first(Period), delta_daily_sd = sd(total)-sd((daily_df %>% filter(gcm=='Historical'))$total))
   delta_plot <- delta_plot %>% left_join(annual_df %>% select(gcm, rcp, yr, delta_annual_mm, Period), 
                                          by = c("gcm", "rcp", "yr","Period"))
-  delta_plot <- delta_plot %>% filter(gcm!='Historic') %>% group_by(gcm,rcp,Period) %>% dplyr::summarise(delta_daily_sd=mean(delta_daily_sd), delta_annual_mm=mean(delta_annual_mm))
+  delta_plot <- delta_plot %>% filter(gcm!='Historical') %>% group_by(gcm,rcp,Period) %>% dplyr::summarise(delta_daily_sd=mean(delta_daily_sd), delta_annual_mm=mean(delta_annual_mm))
   annual_quantile <- data.frame(Period = c("Early", "Middle", "Late"),
                                 xintercept = c(quantile((delta_plot %>% filter(Period=='Early'))$delta_annual_mm, 0.5), quantile((delta_plot %>% filter(Period=='Middle'))$delta_annual_mm, 0.5), quantile((delta_plot %>% filter(Period=='Late'))$delta_annual_mm, 0.5)))
   sd_quantile <- data.frame(Period = c("Early", "Middle", "Late"),
                             yintercept = c(quantile((delta_plot %>% filter(Period=='Early'))$delta_daily_sd, 0.5), quantile((delta_plot %>% filter(Period=='Middle'))$delta_daily_sd, 0.5), quantile((delta_plot %>% filter(Period=='Late'))$delta_daily_sd, 0.5)))
   annual_zero <- data.frame(Period = c("Early", "Middle", "Late"), xintercept=c(0,0,0)); sd_zero <- data.frame(Period = c("Early", "Middle", "Late"), yintercept = c(0,0,0))
+  
+  jpeg(file=paste0(outLocationPath, "/", nameReduce, ".jpg"), width=1000, height=400)
   plot <- ggplot(data=delta_plot, aes(x=delta_annual_mm,y=delta_daily_sd,color=rcp)) + geom_point() +
     geom_text_repel(aes(label = gcm), color = 'black', max.overlaps=Inf) +
     geom_hline(data = sd_quantile, aes(yintercept = yintercept), color = "black") + geom_vline(data = annual_quantile, aes(xintercept = xintercept), color = "black") +
     #geom_hline(data = sd_zero, aes(yintercept = yintercept), color = "black") + geom_vline(data = annual_zero, aes(xintercept = xintercept), color = "black") +
-    facet_wrap(~factor(Period, levels = c('Early', 'Middle', 'Late'))) + labs(title=paste('Changes in streamflow at',ClimateSiteID), x='Change in annual flow magnitude [mm]', y='Change in daily flow standard deviation [mm]', color='RCP') + 
+    facet_wrap(~factor(Period, levels = c('Early', 'Middle', 'Late'))) + labs(title=paste('Changes in streamflow at',SiteID), x='Change in annual magnitude [mm]', y='Change in daily standard deviation [mm]', color='RCP') + 
     scale_color_manual(values = c("45" = "orange", "85" = "red")) + nps_theme()
-  dev.off()
   print(plot)
+  dev.off()
 }
