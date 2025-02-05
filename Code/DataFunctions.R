@@ -312,7 +312,7 @@ divide_by_10 <- function(x, na.rm = FALSE) {
 
 
 # Pull OpenET data for a single point
-get_et_point() <- function(startY, startM, startD, endY, endM, endD, SiteID_FileName, interval, dataPath){
+get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileName, interval, dataPath){
   file_path <- here(dataPath, paste0(paste("OpenET", interval, SiteID_FileName, startY, endY, sep = "_" ), '.csv'))
   if(!file.exists(file_path)){
     api_key <- 'ZZjI9EAHEFsVhFf8WVgBD2J6ks14IbJZJgHYR1iBPO82EcYO2XxeDJAcwAN9'
