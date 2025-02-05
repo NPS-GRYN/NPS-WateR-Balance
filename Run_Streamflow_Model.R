@@ -1,3 +1,18 @@
+# ---------------------------------------------------------------------
+# This script contains code for running and calibrating the streamflow model (which is comprised of
+# the water balance model and the IHACRES rainfall-streamflow runoff model). The model can be run with
+# user-provided model paramters, or the parameters can be calibrated based on measured streamflow values.
+# The model is designed to be run for a USGS streamflow gage, to allow for calibration, but users can also
+# provide their own coordinates if they simply want to run the model.
+# See the User Manual for a more detailed description of the model.
+#
+# EDITS IN PROGRESS:
+# add functionality to run the model many times (like Joseph's wrapper script) - not sure what this should look like
+# clean up, generally make user friendly
+# add info on how to run to the user manual
+# ---------------------------------------------------------------------
+
+
 #######################################################################
 #######################################################################
 ### INTRODUCTION SECTION ###
@@ -28,18 +43,15 @@ future_analysis = TRUE
 runFutureWB = TRUE  # TRUE to re-run entire water balance model for future; FALSE to use pre-existing water balance projections from a Mike Tercek spreadsheet
 userSetJTemp = FALSE 
 make_plots = TRUE 
-provide_coords = FALSE # if true, user provides lat/lon coords. if false, lat/long coords are pulled from centroid of watershed with given gage id
+provide_coords = FALSE # if true, user provides lat/lon coords. if false, lat/lon coords are pulled from centroid of watershed with given gage id
 flow_components = 3  # change the number of components that characterize the flow. can be 2 or 3. 2: flow has quick and slow components; 3: flow has quick, slow, and very slow components.
 FolderName = "optim" 
 
 ### Define watershed ###
 # centroid of watershed
-SiteID = "Little River"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
-GageSiteID <- '03497300'                      #"11460151"             #define stream gage location
-if(provide_coords){
-  lat = 37.9 
-  lon = -122.59 
-}
+SiteID = "Cataloochee"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
+GageSiteID <- '03460000'                  #define stream gage location (RWC: "11460151")
+if(provide_coords) lat = 37.9; lon = -122.59 
 
 ### Define time period for historical analysis ###
 # for GridMET and stream gage; Daymet period starts one year after this period 
@@ -86,7 +98,6 @@ p_slope = 1; p_bias = 0
 
 #######################################################################
 #######################################################################
-### Start of code for Wrapper function ###
 ### GET DATA ###
 
 #######################################################################
@@ -95,35 +106,13 @@ p_slope = 1; p_bias = 0
 # Set path variables
 if(!dir.exists(here('Data', SiteID_FileName))) {dir.create(here('Data', SiteID_FileName))}; dataPath <- here('Data', SiteID_FileName)
 if(!dir.exists(here('Output', SiteID_FileName))) {dir.create(here('Output', SiteID_FileName))}
-if(!dir.exists(here('Output', SiteID_FileName, FolderName))) {dir.create(here('Output', SiteID_FileName, FolderName))}; outLocationPath = here('Output', SiteID_FileName, FolderName)
+if(!dir.exists(here('Output', SiteID_FileName, 'IHACRES'))) {dir.create(here('Output', SiteID_FileName, 'IHACRES'))}
+if(!dir.exists(here('Output', SiteID_FileName, 'IHACRES', FolderName))) {dir.create(here('Output', SiteID_FileName, 'IHACRES', FolderName))}; outLocationPath = here('Output', SiteID_FileName, 'IHACRES', FolderName)
 
 # Pull watershed shapefile from StreamStats database
+# figure out format / how to assign variables
 if(!provide_coords){
-  if(!file.exists(here('Data',SiteID_FileName, 'downloaded_shapefile', 'Layers', 'globalwatershed.shp'))){
-    # get lat/lon data for watershed
-    INFO <- readNWISInfo(siteNumber=GageSiteID, parameterCd = "")
-    
-    # produce workspace ID for given watershed
-    get_workspace = GET(paste0('https://streamstats.usgs.gov/streamstatsservices/watershed.geojson?rcode=',tail(strsplit(INFO$station_nm," ")[[1]],n=1),'&xlocation=',INFO$dec_long_va,"&ylocation=",INFO$dec_lat_va,"&crs=4326&includeparameters=true&includeflowtypes=false&includefeatures=true&simplify=true"))
-    workspaceID <- fromJSON(content(get_workspace, as = "text", encoding = "UTF-8"))$workspaceID
-    
-    # use workspace ID to download shapefile
-    get_download <- GET(paste0("https://streamstats.usgs.gov/streamstatsservices/download?workspaceID=",workspaceID,"&format=SHAPE"))
-    writeBin(content(get_download, "raw"), here("Data",SiteID_FileName,"downloaded_shapefile.zip"))
-    unzip(here("Data",SiteID_FileName,'downloaded_shapefile.zip'), exdir=here('Data',SiteID_FileName,'downloaded_shapefile')); unlink(here("Data",SiteID_FileName,'downloaded_shapefile.zip'), recursive = TRUE)
-
-    # move shapefile so it can be accessed without workspace ID
-    source_folder <- here('Data',SiteID_FileName,'downloaded_shapefile',workspaceID)
-    destination_folder <- here('Data',SiteID_FileName,'downloaded_shapefile')
-    files <- list.files(source_folder, full.names = TRUE)
-    file.rename(files, file.path(destination_folder, basename(files)))
-    unlink(source_folder, recursive = TRUE)
-  }
-  # Load watershed shapefile and get coordinates of centroid
-  aoi <- st_read(here('Data', SiteID_FileName, 'downloaded_shapefile', 'Layers', 'globalwatershed.shp'))
-  centroid <- st_centroid(aoi)
-  centroid_coords <- st_coordinates(st_transform(centroid, crs = 4326))
-  lat <- centroid_coords[1,'Y']; lon <- centroid_coords[1,'X']
+  coords <- get_coords(SiteID_FileName, GageSiteID); lat <- coords$lat; lon <- coords$lon
 }
 
 # Define variables that do not need to be defined outside of the function
@@ -143,131 +132,26 @@ WB_upper = c(WB_upper, jtemp= jtemp+0.5)
 elev = get_elev_daymet(lat, lon, startY, endY, SiteID_FileName)
 
 # create start and end date objects of data collection. Daymet will start one year after the year listed here
-startDate<- ymd(paste(startY, startM, startD))
-endDate<-  ymd(paste(endY, endM, endD))
+startDate<- ymd(paste(startY, startM, startD)); endDate<-  ymd(paste(endY, endM, endD))
 
 
 
 #######################################################################
 ### Scrape and clean USGS stream gage data ###
 
-# Scrape USGS stream gage data
-if(!file.exists(file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, startY+1,endY, sep = "_"), ".csv")))){
-  DailyStream <- EGRET::readNWISDaily(siteNumber = GageSiteID, parameterCd = "00060", 
-                                      startDate = paste(startY, startM, startD, sep='-'), endDate = paste(endY, endM, endD, sep='-')) |>
-    dplyr::filter(grepl('A', Qualifier)) |> #this filters for any Qualifier that has an A. It will return A and A:E
-    dplyr::mutate(CFS = Q*35.314666212661) #converts Q to flow cfs
-  write.csv(DailyStream, file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, startY+1,endY, sep = "_"), ".csv")))
-}else{DailyStream<- read.csv(file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, startY+1,endY, sep = "_"), ".csv")))}
-DailyStream$Date <- as.Date(DailyStream$Date)
-
-# Extract square mileage of the watershed from the EGRET package
-obj = readNWISInfo(siteNumber = GageSiteID, parameterCd = "00060", interactive = FALSE)
-sqmi = obj$drain_area_va
-
-# Aggregate gage discharge data daily and convert from cfs to mm 
-meas_flow_daily <- data.frame(Date = DailyStream$Date, MeasMM = DailyStream$CFS*28316847*86400/(2590000000000 * sqmi))
-meas_flow_daily_xts <- xts(meas_flow_daily$MeasMM, order.by = ymd(meas_flow_daily$Date))
-
-# Aggregate gage discharge data monthly
-meas_flow_daily$YrMon<- format(as.Date(meas_flow_daily$Date, format="%Y-%m-%d"),"%Y-%m")
-if(incompleteMonths){
-  #sum all months of Measured Discharge, including incomplete months
-  meas_flow_mon <- aggregate(meas_flow_daily$MeasMM, by=list(meas_flow_daily$YrMon), FUN=sum)
-  colnames(meas_flow_mon)<- c("YrMon", "MeasMM")
-}else{
-  #aggregate monthly by anyNA()and sum
-  MeasInCompleteMonths<- aggregate(meas_flow_daily$MeasMM, by=list(meas_flow_daily$YrMon), FUN=anyNA)
-  meas_flow_mon <- aggregate(meas_flow_daily$MeasMM, by=list(meas_flow_daily$YrMon), FUN=sum)
-  
-  #merge the incomplete months with the summed months and subset by complete months
-  MeasCM <- merge(MeasInCompleteMonths, meas_flow_mon, by = "Group.1", all = TRUE)
-  meas_flow_mon = subset(MeasCM, MeasCM$x.x == FALSE)
-  
-  # clean up
-  meas_flow_mon = meas_flow_mon[, c("Group.1","x.y")]
-  colnames(meas_flow_mon)<- c("YrMon", "MeasMM")
-}
+gage_data <- get_gage_data(GageSiteID, incompleteMonths, dataPath)
+meas_flow_daily_xts <- gage_data$meas_flow_daily_xts; meas_flow_mon <- gage_data$meas_flow_mon
 
 
 #######################################################################
 ### Scrape and clean meteorological data (GridMET or Daymet) ### 
 
-# Scrape from GridMET or Daymet
-if(GridMET){
-  if(!file.exists(file.path(dataPath, paste0(paste("GridMET",SiteID_FileName,startY, endY, sep = "_" ), '.csv')))){
-    point <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
-    GridMET_vars <- c("pr", "srad","tmmn", "tmmx", "vpd", "vs")
-    DailyClimData <- getGridMET(point,varname = GridMET_vars,startDate = startDate, endDate = endDate,verbose = TRUE)
-    write.csv(DailyClimData, file.path(dataPath, paste0(paste("GridMET",SiteID_FileName,startY, endY, sep = "_" ), ".csv")), row.names = FALSE) 
-  }else{
-    DailyClimData = read.csv(file.path(dataPath, paste0(paste("GridMET",SiteID_FileName,startY, endY, sep = "_" ), ".csv")))
-  }
-} else{if(!file.exists(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY+1,endY, sep = "_"), ".csv")))){
-  point <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
-  DailyClimData <- getDaymet(point, startDate = startDate, endDate = endDate,verbose = TRUE)
-  write.csv(DailyClimData, file.path(dataPath, paste0(paste("Daymet",SiteID_FileName,startY, endY, sep = "_" ), ".csv")), row.names = FALSE) 
-} else{
-  DailyClimData<- read.csv(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY+1,endY, sep = "_"), ".csv")), skip = 6, header = TRUE, sep = ",")
+if(GridMET) {
+  DailyClimData <- get_gridmet_data(SiteID_FileName, startY, endY, lat, lon, dataPath,
+                             tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope)
+} else { 
+  DailyClimData <- get_daymet_data(SiteID_FileName, startY, endY, lat, lon, dataPath)
 }
-}
-
-# Handle leap days in Daymet data
-if(!GridMET){
-  DailyStream$Date<- ymd(DailyStream$Date)
-  HasLeapDays <- data.frame(Date = as.Date(seq(0, (nrow(DailyClimData)-1), 1),
-                                           origin = ymd(paste(startY+1, startM, startD))))
-  NoLeapDays<- HasLeapDays[!(format(HasLeapDays$Date,"%m") == "02" & format(HasLeapDays$Date, "%d") == "29"), , drop = FALSE]
-  DifRows = nrow(HasLeapDays)-nrow(NoLeapDays)
-  LastDate = NoLeapDays[nrow(NoLeapDays),]
-  LostDates <- data.frame(Date = as.Date(seq(1, DifRows, 1), origin = LastDate))
-  NoLeapDays<- rbind(NoLeapDays, LostDates)
-  row.names(NoLeapDays)<- NULL
-  DailyClimData$date<- ymd(NoLeapDays$Date)
-  
-  if(fillLeapDays){
-    # Fill with data from previous day
-    DateSeq <- rbind(HasLeapDays, LostDates)
-    colnames(DateSeq)<- "date"
-    DailyClimData = dplyr::full_join(DateSeq, DailyClimData, by = join_by("date"))
-    na_rows <- as.numeric(rownames(DailyClimData[!complete.cases(DailyClimData), ]))
-    dateColNumber = which(colnames(DailyClimData)=="date")
-    for(i in na_rows){
-      DailyClimData[i,-dateColNumber]<- DailyClimData[i-1,-dateColNumber]
-    }
-  }else{
-    # Remove leap days from streamflow data
-    DailyStream <- DailyStream[!(format(DailyStream$Date,"%m") == "02" & format(DailyStream$Date, "%d") == "29"), , drop = FALSE]
-  }
-  
-  # Match format of GridMET data
-  DailyClimData$month<- as.numeric(format(as.Date(DailyClimData$date, format="%Y-%m-%d"),"%m"))
-  #Daymet automatically includes the whole year of data, whereas GridMET lets you filter by month and day. This will ensure the end date is the same
-  DailyClimData<- subset(DailyClimData, DailyClimData$date<=endDate)
-  DailyClimData$year<- NULL
-  DailyClimData$yday<- NULL
-  DailyClimData$swe..kg.m.2.<- NULL
-  if(fillLeapDays){ #order of columns was changed because of merging 
-    colnames(DailyClimData)<- c("date", "dayl..s." , "pr", "srad" ,"tmmx", "tmmn", "vp..Pa.", "month")
-  }else{colnames(DailyClimData)<- c("dayl..s." , "pr","srad" ,"tmmx", "tmmn", "vp..Pa." ,"date", "month")}
-}
-
-# Convert units for GridMET data
-if(GridMET){
-  # Convert temperature from Kelvin to Celcius
-  DailyClimData$tmmn<- kelvin_to_celcius(DailyClimData$tmmn); DailyClimData$tmmx<- kelvin_to_celcius(DailyClimData$tmmx)
-  
-  # Bias adjustment for temperature 
-  DailyClimData$tmmn = get_slope_bias_adj(orig = DailyClimData$tmmn, bias = tmmn_bias, slopeadj = tmmn_slope)
-  DailyClimData$tmmx = get_slope_bias_adj(orig = DailyClimData$tmmx, bias = tmmx_bias, slopeadj = tmmx_slope)
-  
-  # Bias adjustment for precip 
-  for(i in 1:nrow(DailyClimData)){
-    DailyClimData$pr[i] = if (DailyClimData$pr[i] == 0) {
-      0
-    }else{DailyClimData$pr[i] = get_slope_bias_adj(orig = DailyClimData$pr[i], bias = p_bias, slopeadj = p_slope)}
-  }
-}  
 
 
 
@@ -278,8 +162,9 @@ if(GridMET){
 ### Get initial flow conditions ###
 if(NonZeroDrainInitCoeff){
   InitCond <- get_Init_Drain_Coef(DailyClimData, gw_add, vfm , jrange ,hock, hockros,
-                                  dro, mondro , aspect, slope, shade.coeff, jtemp ,SWC.Max, 
-                                  Soil.Init, Snowpack.Init, T.Base, q0, s0, v0, qa, qb, sa, sb, va, vb, PETMethod, lat, lon, cutoffYear)
+                                  dro, mondro , aspect, slope, shade.coeff, jtemp, SWC.Max, 
+                                  Soil.Init, Snowpack.Init, T.Base, PETMethod, 
+                                  q0, s0, v0, qa, qb, sa, sb, va, vb, lat, lon, cutoffYear)
   
   q0 = InitCond[["Quick"]]; s0= InitCond[["Slow"]]; v0 = InitCond[["Very_Slow"]]
 }
@@ -300,40 +185,20 @@ results <- data.frame(SiteID = SiteID, start = startDate, end = endDate, PETMeth
 ### First optimization: optimize water balance variables according to the NSE of monthly summed streamflow over historical period ###
 if(optimization){
   parms<- c(gw_add = gw_add, vfm = vfm, jrange = jrange, hock =  hock, hockros = hockros,dro = dro, mondro = mondro,
-            aspect = aspect,slope= slope, shade.coeff= shade.coeff, SWC.Max = SWC.Max,
-            jtemp = jtemp)
+            aspect = aspect,slope= slope, shade.coeff= shade.coeff, SWC.Max = SWC.Max, jtemp = jtemp)
   
   #run the optimization routine
   strtTimeM <-Sys.time()
   set.seed(123) #this ensures reproducibility each time
   WBcoeffs <- tibble()
   
-  # try GA
-  # returned value is labeled as l_par - not sure why???
+  # Use genetic algorithm (GA) for optimization
   optMonth_init <- ga(type = "real-valued", fitness = function(x) 
     WB_Optim(c(gw_add=x[1], vfm=x[2], jrange=x[3], hock=x[4], hockros=x[5], dro=x[6], mondro=x[7], aspect=x[8], slope=x[9], shade.coeff=x[10], SWC.Max=x[11], jtemp=x[12]), 
-            meas_flow_daily_xts = meas_flow_daily_xts, cutoffYear = cutoffYear, q0=q0, s0=s0, v0=v0,qa=qa, qb=qb, sa=sa, sb=sb,va=va, Soil.Init = Soil.Init, Snowpack.Init = Snowpack.Init,T.Base = T.Base, DailyClimData = DailyClimData, PETMethod= PETMethod, lat=lat,lon=lon, meas_flow_mon = meas_flow_mon), 
+            meas_flow_daily_xts = meas_flow_daily_xts, cutoffYear = cutoffYear, q0=q0, s0=s0, v0=v0,qa=qa, qb=qb, sa=sa, sb=sb,va=va, vb=vb, Soil.Init = Soil.Init, 
+            Snowpack.Init = Snowpack.Init, T.Base = T.Base, PETMethod= PETMethod, DailyClimData = DailyClimData, lat=lat,lon=lon, meas_flow_mon = meas_flow_mon), 
     lower=WB_lower, upper=WB_upper)
   elpTimeM <- Sys.time() - strtTimeM
-  
-  # Define water balance variables from best run - delete?
-  # gw_add=optMonth_init@solution[1]; vfm=optMonth_init@solution[2]; jrange=optMonth_init@solution[3]
-  # hock=optMonth_init@solution[4]; hockros=optMonth_init@solution[5]; dro=optMonth_init@solution[6]
-  # mondro=optMonth_init@solution[7]; aspect=optMonth_init@solution[8]; slope=optMonth_init@solution[9]
-  # shade.coeff=optMonth_init@solution[10]; SWC.Max=optMonth_init@solution[11]; jtemp=optMonth_init@solution[12]
-
-  ### OLD CODE FOR OPTIMIZATION ###
-  # making factr larger will decrease the accuracy (better for a first, coarse optimization). old: 1e-6
-  # optMonth <- optim(par = parms, fn = WB_Optim, method = "L-BFGS-B",
-  #                   lower = WB_lower, upper = WB_upper, hessian=TRUE, control = list(fnscale = -1, factr = '1e-2')
-  #                   #these are carried through to WB_optim
-  #                   ,meas_flow_daily_xts = meas_flow_daily_xts, cutoffYear = cutoffYear, q0=q0, s0=s0, v0=v0,
-  #                   qa=qa, qb=qb, sa=sa, sb=sb,va=va, Soil.Init = Soil.Init, #SWC.Max = SWC.Max, 
-  #                   Snowpack.Init = Snowpack.Init,T.Base = T.Base, 
-  #                   DailyClimData = DailyClimData, PETMethod= PETMethod, lat=lat, 
-  #                   lon=lon, meas_flow_mon = meas_flow_mon)
-  #collect variables and outcome of best run
-  # optValuesM <- data.frame(nseM = optMonth$value, t(as.matrix(optMonth$par)))
   
   # Define the water balance variables from the best run
   optValuesM <- data.frame(nseM = optMonth_init@fitnessValue, optMonth_init@solution)
@@ -596,5 +461,3 @@ if(future_analysis){
   source("Future_Analysis.R")
 }
 
-
-######## end of code for Wrapper function ########

@@ -1,11 +1,13 @@
-###################################################################################
-## ET_functions.R
-## Functions to calculate potential evapotranspiration from input climate data. Based on Dave Thoma's water balance Excel spreadsheet model.
-## Created 10/30/2019 by ARC
-## v01 - Includes Hamon daily and Thornthwaite monthly calculations
-## v01.01 - Added Penman-Monteith equations and dependent functions (ARC - 11/06/19)
-## Future updates - adding more ET calculation methods
-###################################################################################
+# ---------------------------------------------------------------------
+# This script includes functions to calculate potential evapotranspiration from input climate data,
+# in support of the water balance model. Functions are based on Dave Thoma's water balance Excel 
+# spreadsheet model.
+# 
+# EDITS IN PROGRESS
+# test all ET functions (except for Oudin, which is verified to be working currently)
+# improve documentation
+# ---------------------------------------------------------------------
+
 
 # Daylength: Returns daylength in hours for a series of dates, based on latitude. Calls the 'geosphere' package.
 # Args:

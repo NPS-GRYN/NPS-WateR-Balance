@@ -1,8 +1,13 @@
-#######################################################################
-#######################################################################
-### INTRODUCTION SECTION ###
+# ---------------------------------------------------------------------
 # This file contains the code to run the water balance model and compare to a calibrated excel sheet
-# At Frog Rock
+# Currently the code will only work for pre-calibrated streamflow projections at Frog Rock.
+# 
+# EDITS IN PROGRESS
+# compare optimized code to spreadsheet model
+# add crosscheck of streamflow model (WB + IHACRES)
+# develop "worksheet" where it is easy for users to play with parameters and see impact on streamflow
+# go through the rest of the crosscheck folder and figure out what is worth keeping/what's not
+# ---------------------------------------------------------------------
 
 #######################################################################
 ### Load libraries ###
@@ -59,9 +64,10 @@ DailyWB_Python <-read.csv(here('RExcelCrossCheckWetBeaver/FrogRock_Python_Output
 
 ### PLOT ###
 wb_vars <- c('SOIL','AET','D','PET','PACK','SNOW')
+if(!dir.exists(here('Output', 'Validation'))) {dir.create(here('Output', 'Validation'))}
 
 # Compare Excel and Python 
-jpeg(here('RExcelCrossCheckWetBeaver/ExcelPython_Compare.jpg'), width=600, height=400); par(mfrow=c(2,3))
+jpeg(here('Output','Validation','ExcelPython_Compare.jpg'), width=600, height=400); par(mfrow=c(2,3))
 for(var in wb_vars){
   print(var)
   # calculate R2
@@ -76,7 +82,7 @@ for(var in wb_vars){
 dev.off()
 
 # Compare R and Excel
-jpeg(here('RExcelCrossCheckWetBeaver/ExcelR_Compare.jpg'), width=600, height=450); par(mfrow=c(2,3))
+jpeg(here('Output','Validation','ExcelR_Compare.jpg'), width=600, height=450); par(mfrow=c(2,3))
 for(var in wb_vars){
   print(var)
   # calculate R2
@@ -92,11 +98,6 @@ for(var in wb_vars){
 dev.off()
 
 
-
-#######################################################################
-### other things to add to the crosscheck code:
-# compare optimized code to spreadsheet model
-# add crosscheck of streamflow model (WB + IHACRES)
 
 
 

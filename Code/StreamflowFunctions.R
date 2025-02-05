@@ -1,32 +1,46 @@
 # ---------------------------------------------------------------------
 # This script includes functions that support the calibration and running of the Water Balance
-# and IHACRES flow models. 
+# and IHACRES flow models.
+# 
+# EDITS IN PROGRESS
+# improve documentation + code readability
 # ---------------------------------------------------------------------
-# check redundancy between ihacres and drain
 
-# theme for plots
+# Theme for plots
 windowsFonts("Frutiger LT Std 55 Roman" = windowsFont("Frutiger LT Std 55 Roman"))
 nps_theme <- function(base_size = 20, base_family="Frutiger LT Std 55 Roman") {
   theme_bw(base_size = base_size, base_family = "Frutiger LT Std 55 Roman") %+replace%
     theme(axis.text.x = element_text(family="Frutiger LT Std 55 Roman", size = base_size * 0.8), complete = TRUE)}
 
 
-# Check validity of user-provided date vectors
+# Check validity of date vector
+# Args:
+#   vec: vector of dates
+# Returns:
+#   Warning if the vector is not in the format year, month, day
 CheckVecDates= function(vec){
   if(length(vec)!=3|names(vec)[1]!= "year" |names(vec)[2]!= "month"|names(vec)[3]!="day"){
-    warning("start and end must be vectors of length 3 with names c(year, month, day).") ;stop()
+    warning("start and end must be vectors of length 3 with names c(year, month, day)."); stop()
   }
 }
 
 # Validate the number of columns in a data frame
+# Args:
+#   inputData
+#   n_col
+# Returns:
+#   Warning if the number of columns does not match n_col
 CheckNumCol = function(inputData, n_col){
   if(ncol(inputData)!= n_col | !is.data.frame(inputData)){
-    warning(... = paste("Input should be a data frame and should have",n_col , "columns."))
-    stop()
+    warning(... = paste("Input should be a data frame and should have",n_col , "columns.")); stop()
   }
 }
 
-# Calculate IHACRES vb from other IHACRES coefficients
+# Calculate IHACRES vb from other IHACRES coefficients, to ensure conservation of mass
+# Args:
+#   IHACRES coefficients (qa, qb, sa, sb, va)
+# Returns: 
+#   Calculated value of vb
 calc_vb = function(qa, qb, sa, sb, va){
   vb <- (1-(qb/(1-qa)+sb/(1-sa)))*(1-va)
   return(vb)
@@ -34,12 +48,12 @@ calc_vb = function(qa, qb, sa, sb, va){
 
 # Calculate adjusted runoff and intermediate variables given meteorological data as input
 # Args: 
-#   DailyWB: dataframe with meteorological data
+#   DailyWB: dataframe with meteorological data @@
 #   Water Balance parameters(gw_add, vfm, jrange ,hock ,hockros,dro,mondro , aspect, 
-#   slope, shade.coeff, jtemp ,SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod)
-#   lat, lon: latitude and longitude of site
+#   slope, shade.coeff, jtemp ,SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod): parameters for water balance model
+#   lat, lon: Latitude and longitude of site, in degrees
 # Returns:
-#   DailyWB dataframe with
+#   DailyWB dataframe with @@
 WB= function(DailyWB, gw_add, vfm , jrange ,hock ,hockros,dro,mondro , aspect, 
              slope, shade.coeff, jtemp ,SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon){
   #add month and day of year columns, GridMet comes with a date column, but the functions below need month and day of year
@@ -71,21 +85,19 @@ WB= function(DailyWB, gw_add, vfm , jrange ,hock ,hockros,dro,mondro , aspect,
 
 # Calculate total flow based on water balance output
 # Args:
-#   DailyDrain
-#   Initial IHACRES coefficients
-#   IHACRES coefficients
+#   DailyDrain: dataframe containing @@
+#   Initial IHACRES coefficients (q0, s0, v0): initial values for IHACRES model. Must be between 0 and 1 (inclusive)
+#   IHACRES coefficients (qa, qb, sa, sb, va, vb): numeric values between 0 and 1 (inclusive) for IHACRES model 
 # Returns:
 #   Data frame including total streamflow and intermediate calculations of quick, slow, and very slow flow
-#The function does the calculations in two parts. The first part evaluates flow for the first day, the next for days 2 to the end
-#It is done this way becayse there are initial flow conditions for the first day of flow that replaced by the previous days flow in subsequent calculations
 Drain = function(DailyDrain, q0, s0, v0, qa, qb, sa, sb, va, vb){
   days <- nrow(DailyDrain)
-  #Calculate flows for first day only
+  # Calculate flows for first day only, based on initial flow conditions
   q<- c(); q[1] = DailyDrain$adj_runoff[1]*qb+q0*qa
   s<- c(); s[1] = DailyDrain$adj_runoff[1]*sb+s0*sa
   v<- c(); v[1] = DailyDrain$adj_runoff[1]*vb+v0*va
   
-  #calculate flows for the rest of the days
+  # Calculate flows for the rest of the days, based on previous day's flow
   for (i in 2:days){
     q[i] = DailyDrain$adj_runoff[i] * qb + q[i-1] * qa
     s[i] = DailyDrain$adj_runoff[i] * sb + s[i-1] * sa
@@ -102,7 +114,7 @@ Drain = function(DailyDrain, q0, s0, v0, qa, qb, sa, sb, va, vb){
 # Args:
 #   DailyDrain: dataframe of modeled streamflow
 #   meas_flow_mon: dataframe of measured streamflow
-#   cutoffYear: year at which analysis of historical data begins
+#   cutoffYear: year at which calibration to historical data begins
 # Returns:
 #   Dataframe with monthly summed measured and modeled streamflow
 MeasModWB = function(DailyDrain, meas_flow_mon, cutoffYear){
@@ -118,23 +130,23 @@ MeasModWB = function(DailyDrain, meas_flow_mon, cutoffYear){
   return(MeasMod)
 }
 
-# Calculate initial drainage coefficients by averaging January average flows
+
+
+# Calculate initial drainage coefficients by averaging January average flows for 10 year calibration period
+# Generally not used because calibration is not very accurate; if not used, initial coefficients will be 0
 # Args:
-#   DailyClimData
-#   Water Balance parameters(gw_add, vfm , jtemp , jrange ,hock ,hockros,dro,
-#   mondro , aspect,slope, shade.coeff, SWC.Max,Soil.Init, Snowpack.Init, T.Base,PETMethod)
-#   Initial IHACRES coefficients (q0, s0, v0)
-#   IHACRES coefficients (qa, qb, sa, sb, va, vb)
-#   lat, lon
-#   cutoffYear
+#   DailyClimData: dataframe of climate data including @@ at a daily time step 
+#   Water Balance parameters(gw_add, vfm , jtemp , jrange ,hock ,hockros,dro, 
+#   mondro , aspect,slope, shade.coeff, SWC.Max,Soil.Init, Snowpack.Init, T.Base,PETMethod): parameters for water balance model
+#   Initial IHACRES coefficients (q0, s0, v0): initial values for IHACRES model. Must be between 0 and 1 (inclusive)
+#   IHACRES coefficients (qa, qb, sa, sb, va, vb): numeric values between 0 and 1 (inclusive) for IHACRES model 
+#   lat, lon: Latitude and longitude of site, in degrees
+#   cutoffYear: year at which calibration to historical data begins
 # Returns:
 #   Dataframe (?) of initial drainage coefficients  
-#This is not usually used, but is done to fix the the inaccuracies in the first 10 or 20 years of modeled streamflow
-#They are inaccurate because it takes 10-20 years to calibrate up to the correct values of flow
-#If not used, these Initial Drain Coefficients will all be 0
 get_Init_Drain_Coef = function(DailyClimData, gw_add, vfm , jtemp , jrange ,hock ,hockros,dro,
-                               mondro , aspect,slope, shade.coeff, SWC.Max,Soil.Init, Snowpack.Init, T.Base, 
-                               q0, s0, v0, qa, qb, sa, sb, va, vb, PETMethod, lat, lon, cutoffYear){
+                               mondro , aspect,slope, shade.coeff, SWC.Max,Soil.Init, Snowpack.Init, T.Base, PETMethod,
+                               q0, s0, v0, qa, qb, sa, sb, va, vb, lat, lon, cutoffYear){
 
   DailyWB<- WB(DailyClimData, gw_add, vfm, jtemp, jrange, hock, hockros, dro, mondro, aspect, slope, 
                shade.coeff, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
@@ -168,13 +180,23 @@ get_Init_Drain_Coef = function(DailyClimData, gw_add, vfm , jtemp , jrange ,hock
 }
 
 # Water Balance function for first optimization routine
+# Args:
+#   parms: list of water balance parameters for optimizing (gw_add, vfm, jrange, hock, hockros, dro, mondro, aspect, slope, shade.coeff, SWC.Max, jtemp)
+#   meas_flow_daily_xts: xts object containing measured streamflow at daily time step
+#   cutoffYear: year at which calibration to historical data begins
+#   Initial IHACRES coefficients (q0, s0, v0): initial values for IHACRES model. Must be between 0 and 1 (inclusive)
+#   IHACRES coefficients (qa, qb, sa, sb, va, vb): numeric values between 0 and 1 (inclusive) for IHACRES model 
+#   Default Water Balance parameters (Soil.Init, Snowpack.Init, T.Base, PETMethod): water balance parameters that are not included in optimization 
+#   DailyClimData: 
+#   lat, lon: Latitude and longitude of site, in degrees
+#   meas_flow_mon: xts ? object containing measured streamflow at a monthly timestep
 # Returns:
 #   Monthly NSE of modeled streamflow
 WB_Optim = function(parms,
                     #these are passed into WB_optim() from the global environment
-                    meas_flow_daily_xts, cutoffYear, q0, s0, v0, qa, qb, sa, sb,va, #SWC.Max, 
-                    Soil.Init, Snowpack.Init, T.Base, DailyClimData,
-                    PETMethod, lat, lon, meas_flow_mon){
+                    meas_flow_daily_xts, cutoffYear, q0, s0, v0, qa, qb, sa, sb, va, vb,  
+                    Soil.Init, Snowpack.Init, T.Base, PETMethod, DailyClimData,
+                    lat, lon, meas_flow_mon){
   gw_add=parms[["gw_add"]]; vfm=parms[["vfm"]]; jrange=parms[["jrange"]];hock=parms[["hock"]];hockros = parms[["hockros"]]
   dro=parms[["dro"]]; mondro=parms[["mondro"]];aspect=parms[["aspect"]]; slope=parms[["slope"]];
   shade.coeff=parms[["shade.coeff"]]; SWC.Max=parms[["SWC.Max"]]; jtemp=parms[["jtemp"]]
@@ -198,8 +220,56 @@ WB_Optim = function(parms,
   return(nseM)
 }
 
+
+
+# Water Balance function for optimization of only water balance based on AET
+# Args:
+#   parms: list of water balance parameters for optimizing (gw_add, vfm, jrange, hock, hockros, dro, mondro, aspect, slope, shade.coeff, SWC.Max, jtemp)
+#   cutoffYear: year at which calibration to historical data begins
+#   Default Water Balance parameters (Soil.Init, Snowpack.Init, T.Base, PETMethod): water balance parameters that are not included in optimization 
+#   DailyClimData: 
+#   lat, lon: Latitude and longitude of site, in degrees
+#   meas_aet_mon: xts ? object containing measured AET at a monthly timestep, from OpenET
+# Returns:
+#   Monthly NSE of modeled streamflow
+WB_Optim_AET = function(parms, Soil.Init, Snowpack.Init, T.Base, PETMethod, DailyClimData, lat, lon, meas_aet_mon){
+  gw_add=parms[["gw_add"]]; vfm=parms[["vfm"]]; jrange=parms[["jrange"]];hock=parms[["hock"]];hockros = parms[["hockros"]]
+  dro=parms[["dro"]]; mondro=parms[["mondro"]];aspect=parms[["aspect"]]; slope=parms[["slope"]];
+  shade.coeff=parms[["shade.coeff"]]; SWC.Max=parms[["SWC.Max"]]; jtemp=parms[["jtemp"]]
+  
+  # run WB
+  DailyWB <- WB(DailyClimData, gw_add, vfm , jrange, hock, hockros, dro, mondro, aspect, 
+                slope, shade.coeff, jtemp, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
+  
+  # Aggregate WB AET monthly 
+  Mod <- DailyWB[,c("date","AET")]; colnames(Mod) <- c("Date", "Mod AET")
+  #Mod$YrMon <- format(as.Date(Mod$date, format="%Y-%m-%d"),"%Y-%m"); meas_aet_mon$Date <- format(as.Date(meas_aet_mon$Date),"%Y-%m")
+  #ModAgg <- aggregate(Mod$AET, by=list(Mod$YrMon), FUN=sum)
+  #colnames(ModAgg) <- c("Date", "Mod AET")
+  MeasMod <- dplyr::full_join(meas_aet_mon, Mod, by = join_by(Date))
+  colnames(MeasMod)<- c("YrMon", "Meas","Mod")
+  MeasMod<- MeasMod[complete.cases(MeasMod),]
+  
+  # calculate monthly NSE
+  x<- MeasMod$Mod
+  y<- MeasMod$Meas
+  nseM = NSE(x, y)
+  Coeffs = data.frame(gw_add=gw_add, vfm= vfm, jrange=jrange, hock =hock, hockros=hockros, dro =dro, mondro = mondro, 
+                      aspect = aspect, slope =slope, shade.coeff=shade.coeff, SWC.Max=SWC.Max, jtemp = jtemp, nseM=nseM)
+  WBcoeffs <<- rbind(WBcoeffs, Coeffs) # (<<-) is a global assignment operator
+  print(str_c("nseM ", round(nseM, 4)))
+  return(nseM)
+}
+
+
+
 # IHACRES Flow function for second optimization
 # Args:
+#   parms: list of numeric values between 0 and 1 (inclusive) corresponding to qa, qb, sa, sb, va
+#   Initial IHACRES coefficients (q0, s0, v0): initial values for IHACRES model
+#   Daily WB: 
+#   meas_flow_daily_xts: xts object containing measured streamflow at daily time step
+#   cutoffYear: year at which calibration to historical data begins
 # Returns:
 #   Daily NSE of modeled streamflow
 IHACRESFlow <- function(parms, q0, s0, v0, DailyWB, meas_flow_daily_xts, cutoffYear){ 
@@ -232,73 +302,4 @@ IHACRESFlow <- function(parms, q0, s0, v0, DailyWB, meas_flow_daily_xts, cutoffY
   print(str_c("nseD ", round(nseD, 4)))
   return(nseD)
 } 
-
-
-
-# MODIFIED from Janelle/Connor code
-# STILL EDITING
-# not sure what's going on w mike tercek's website
-# Pull Mike water balance data for a single point from online
-# Args:
-#   SiteID_FileName
-#   lat, lon
-#   startY_future, endY_future: start and end years of future projection period
-# Returns:
-#   Nothing; saves Mike water balance data as a csv file
-get_gridded_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
-  # Initialize variables to hold data
-  holder <- NULL 
-  future_wb <- NULL
-  for(GCM in gcm_list){
-    for(RCP in c("rcp85", "rcp45")){
-      print(paste("downloading", GCM, RCP))
-      model_holder <- NULL
-      for(yr in c(startY_future:endY_future)){ 
-        leap <- lubridate::leap_year(yr) 
-        if(leap == TRUE){enddate <- paste(yr,"12-31", sep = "-")
-        } else {enddate <- paste(yr + 1, "01-01", sep = "-")}
-        var_holder <- NULL
-        for(climvar in c("soil_water", "runoff", "rain","accumswe", "PET", "Deficit", "AET")){
-          data_url<-paste("http://www.yellowstone.solutions/thredds/ncss/daily_or_monthly/gcm/",RCP,"/",GCM,"/V_1_5_",yr,"_",GCM,"_",RCP,"_",climvar,".nc4?var=",climvar,"&latitude=",lat,"&longitude=",lon,"&time_start=",yr,"-01-01T12%3A00%3A00Z&time_end=",enddate,"T12%3A00%3A00Z&accept=csv_file",sep ="") 
-          
-          # http://www.yellowstone.solutions/thredds/ncss/daily_or_monthly/gcm/rcp85/inmcm4/V_1_5_2099_inmcm4_rcp85_soil_water_monthly.nc4?var=soil_water&latitude=45&longitude=-111&time_start=2099-01-16T05%3A14%3A31.916Z&time_end=2099-12-17T00%3A34%3A14.059Z&accept=csv_file
-          
-          #temporary holder for subsets downloaded from cloud
-          holder <-data.frame(fread(data_url, verbose=FALSE, showProgress = FALSE,)) 
-          colnames(holder) <- c("time", "latitude", "longitude", paste(climvar))
-          holder$GCM <- GCM; holder$RCP <- RCP
-          if(is.null(var_holder)){
-            var_holder <- holder
-          } else{
-            var_holder <- merge(var_holder, holder)}
-          #date <- future_wb$time # dates don't download correctly without this
-        }
-        model_holder <- rbind(model_holder, var_holder)
-      }
-      future_wb<-rbind(future_wb, model_holder)
-    }
-  }
-  write.csv(future_wb, file.path(dataPath, paste("WB",SiteID_FileName,"2023_2100.csv", sep = "_")))
-}
-  
-  
-  #"agdd", fix this - return when agdd is back on the website
-  
-  ### make sure to put agdd BEFORE AET - will mess up code if agdd is last
-  
-  
- # mydat4<-cbind(mydat3,mydat2) #join the data with metadata including date, lat, long
-  
-  #colnames(mydat4)[]<-c("date", "lat","lon","soil_water_daily_wc", "runoff_daily_wc", "rain_daily_wc",  "accumswe_daily_wc", "pet_daily_wc", "deficit_daily_wc", "aet_daily_wc", "soil_water_daily_bc", "runoff_daily_bc", "rain_daily_bc",  "accumswe_daily_bc", "pet_daily_bc", "deficit_daily_bc", "aet_daily_bc")
-  
-  #mydat5 <- mydat4 %>% 
-  #  mutate(lat = as.character(lat),
-  #         lon = as.character(lon)) %>% 
-  #  mutate_if(is.numeric, divide.by.10)
-
-
-# divides x by 10. supporting for WB extraction code
-divide.by.10 <- function(x, na.rm = FALSE) {
-  x/10
-}
 
