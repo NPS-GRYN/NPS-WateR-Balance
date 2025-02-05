@@ -4,10 +4,12 @@
 # which are either calculated using pre-calibrated coefficients or pulled from a pre-generated
 # gridded water balance model produced/maintained by Mike Tercek. This code also provides 
 # preliminary visualizations of these future streamflow projections. 
+# 
+# EDITS IN PROGRESS
+# implement code to pull and use Mike's data (see DataFunctions.R script)
 # ---------------------------------------------------------------------
 
 
-# CHANGE RUN TO PROJECTION AND GCM/RCP to respective
 
 #######################################################################
 ### GENERATE FUTURE WATER BALANCE MODELS ###
@@ -28,68 +30,35 @@ if(!runFutureWB){
     #adjust for ground water addition and volume forcing multiplier
     future_wb$adj_runoff<- get_adj_runoff(future_wb$runoff, gw_add = gw_add, vfm = vfm)
   } else{
-    DataDownLoad(datapath, 'gridMET', model_wc_rcp,model_wc,model_bc,model_bc_rcp, SiteID_FileName, lat, lon, startY, endY, 2099, endY)
+    # EDITING
+    future_wb <- get_gridded_wb(datapath, 'gridMET', SiteID_FileName, lat, lon, startY, endY, 2099, endY)
   }
 }
 
 
 ### Re-run water balance model to generate future projections ###
 if(runFutureWB){
-  # Pull future meteorological data
-  if(!file.exists(here('Data',SiteID_FileName,paste('MACA',SiteID_FileName, endY, '2100.csv', sep='_')))){
-    # Pull data
-    point <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
-    future_climate_data <- getMACA(point, c('tasmin','tasmax','pr','rsds','vpd','vas','uas'), timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'), 
-                                   startDate = '2023-01-01', endDate = '2099-12-31')
-    
-    # Clean and compile data
-    precip<-NULL; tasmin<-NULL; tasmax<-NULL; rsds<-NULL; vpd<-NULL; vas<-NULL; uas<-NULL 
-    for(i in 2:length(colnames(future_climate_data))){
-      split_colnames <- strsplit(colnames(future_climate_data[i]), "_")
-      combine <- data.frame(date=future_climate_data[,1], GCM=split_colnames[[1]][2], RCP=split_colnames[[1]][4],
-                            var=future_climate_data[,i])
-      if(split_colnames[[1]][1] == 'pr') {precip <- rbind(precip, combine)}
-      if(split_colnames[[1]][1] == 'tasmin') {tasmin <- rbind(tasmin, combine)}
-      if(split_colnames[[1]][1] == 'tasmax') {tasmax <- rbind(tasmax, combine)}
-      if(split_colnames[[1]][1] == 'rsds') {rsds <- rbind(rsds, combine)}
-      if(split_colnames[[1]][1] == 'vpd') {vpd <- rbind(vpd, combine)}
-      if(split_colnames[[1]][1] == 'vas') {vas <- rbind(vas, combine)}
-      if(split_colnames[[1]][1] == 'uas') {uas <- rbind(uas, combine)}
-    }
-    colnames(precip) <- c('date','GCM','RCP','pr'); colnames(tasmin) <- c('date','GCM','RCP','tmmn'); colnames(tasmax) <- c('date','GCM','RCP','tmmx')
-    colnames(rsds) <- c('date','GCM','RCP','srad'); colnames(vpd) <- c('date','GCM','RCP','vpd'); colnames(vas) <- c('date','GCM','RCP','vas'); colnames(uas) <- c('date','GCM','RCP','uas')
-
-    future_climate <- Reduce(function(x, y) merge(x, y, by = c('date', 'GCM', 'RCP'), all = TRUE), list(precip, tasmin, tasmax, rsds, vpd, vas, uas))
-    
-    future_climate$tmmn <- future_climate$tmmn - 273.15; future_climate$tmmx <- future_climate$tmmx - 273.15
-    future_climate$vs <- sqrt(future_climate$vas^2 + future_climate$uas^2)
-    future_climate <- future_climate %>% mutate(projection = paste0(GCM, '.', RCP))
-    future_climate <- future_climate %>% select(-vas, -uas, -GCM, -RCP)
-    future_climate <- future_climate[,c('projection','date','pr','srad','tmmn','tmmx','vs','vpd')]
-    
-    # Save
-    write.csv(future_climate, file = here('Data', SiteID_FileName, paste('MACA',SiteID_FileName,endY,'2100.csv', sep='_')), row.names = FALSE)
-  }
-  
-  # Run WB code for each future model projection
+  # has the name projection been changed?
   if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))){
-    future_climate <- read.csv(here('Data',SiteID_FileName,paste('MACA',SiteID_FileName, '2023_2100.csv', sep='_')))
+    # Get future climate data
+    future_climate <- get_maca_point()
     future_climate$date <- as.Date(future_climate$date)
 
+    # Run water balance code for each future projection
     future_wb_calc <- NULL
-    for(run in unique(future_climate$projection)){
-      ClimData <- future_climate %>% filter(projection==run) %>% select(-projection)
+    for(projection in unique(future_climate$projection)){
+      ClimData <- future_climate %>% filter(projection==projection) %>% select(-projection)
       DailyWB_future <- WB(ClimData, gw_add, vfm, jrange, hock, hockros, dro, mondro, aspect, slope,
-                           shade.coeff, jtemp, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon)
-      DailyWB_future <- cbind(run, DailyWB_future)  
+                           shade.coeff, jtemp, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
+      DailyWB_future <- cbind(projection, DailyWB_future)  
       future_wb_calc <- rbind(future_wb_calc, DailyWB_future)
     }
-    # Save calculated WB results
+    # Save calculated WB
+    future_wb_calc <- future_wb_calc %>% rename(Date = date, projection = run)
     write.csv(future_wb_calc, here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')), row.names=FALSE)
   }
-  
+  # Read in calculated WB 
   future_wb <- read.csv(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))
-  future_wb <- future_wb %>% rename(Date = date)
   future_wb$Date <- as.Date(future_wb$Date, '%m/%d/%Y')
 }
 
@@ -140,16 +109,16 @@ if(runFutureWB){
 #######################################################################
 ### GENERATE FUTURE STREAMFLOW PROJECTIONS ###
 
-### Run DailyDrain for each future projection ###
+### Run IHACRES model for each future projection ###
 gcms<-unique(future_wb$projection)
 futures <- NULL
 for (j in 1:length(gcms)){
-  #subset one model
+  # Subset one model
   fut_ro <- subset(future_wb, projection == gcms[j]); print(gcms[j])
   data <- data.frame(fut_ro$adj_runoff)
   colnames(data) <- c("adj_runoff")
   
-  #run the Drain function
+  # Run IHACRES model
   DailyDrainFuture <- Drain(data, q0, qa, qb, s0, sa, sb, v0, va, vb)
   
   # Save streamflow projection to futures dataframe

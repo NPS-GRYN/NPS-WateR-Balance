@@ -1,10 +1,15 @@
 # ---------------------------------------------------------------------
-# This script includes functions related to the Water Balance model. These functions are either
+# This script includes functions related to the running of the Water Balance model. 
+# These functions are either reproduced directly from the WaterBalance R package, 
 # updated versions of those included in the WaterBalance R package or newly created functions
 # that expand the capabilities of the WaterBalance R package.
+# The original WaterBalance R package can be found here: https://github.com/CCRP-Adaptation/WaterBalance. 
+#
+# EDITS IN PROGRESS
+# improve documentation
 # ---------------------------------------------------------------------
 
-### From Amber WaterBalance package (https://github.com/CCRP-Adaptation/WaterBalance) ###
+### From WaterBalance package  ###
 
 # Rain: Calculates rainfall totals based on precipitation and freeze factor.
 # Args:
@@ -147,9 +152,11 @@ get_GDD = function(tmean, tbase=NULL){
 }
 
 
-### Joseph's edits to match excel calculations ###
+### Modified or new water balance functions ###
+# Joseph Crane added these functions to improve model accuracy and match the R model to the Excel model. 
 
-# Direct runoff: Calculate direct runoff 
+# Calculate direct runoff 
+# Update: WB package only had get runoff and not direct runoff; Excel had both
 # Args:
 #   DailyWB: A dataframe of 
 #   mondro:
@@ -161,8 +168,6 @@ get_GDD = function(tmean, tbase=NULL){
 #   month:
 # Returns
 #   raindro: 
-#I edited this function to match the calculation in Excel
-#The WB package only had get runoff and not direct runoff
 get_dro = function(DailyWB, mondro, dro, tmean, jtemp, jrange, precip, month){
   high = jtemp+jrange
   raindro<- c()
@@ -176,21 +181,25 @@ get_dro = function(DailyWB, mondro, dro, tmean, jtemp, jrange, precip, month){
   return(raindro)
 }
 
-#I made this to match Excel because the WB package only had runoff and not direct runoff
-#This meant they did not subtract the direct runoff from precip
+
+
+# Calculate precip
+# Update: Now that R code calculates direct runoff, it must be subtracted from precip 
+# Args:
+# Returns:
 get_precip = function(precip, raindro){
   upprec = precip - raindro
   return(upprec)
 }
 
 # Freeze factor using Jennings et al., 2018 thresholds to partition rain and snow
+# Update: jrange was formerly hard coded to 3, update allows variation. 
 # Args:
 #   jtemp: the Jennings temperature extracted from the raster based on latitude and longitude.
 #   tmean: A vector of daily mean temperatures (deg C).
 #   jrange:
 # Returns:
 #   Freeze factor from 0-1 based on a temperature threshold from Jennings et al., 2018 and average temperature
-#I edited this function to allow for jrange, It was hard coded to 3
 get_freeze = function (jtemp, tmean, jrange) 
 {
   freeze = ifelse(tmean <= (jtemp - jrange), 0, ifelse(tmean >= 
@@ -198,6 +207,7 @@ get_freeze = function (jtemp, tmean, jrange)
 }
 
 # Melt: Calculates the amount of snowmelt at time steps from snowpack, temperature, and Hock melt factor.
+# Update: Includes updated final hock value (combination of 2) and adds jrange
 # Args:
 #   rain: A vector of rainfall totals
 #   sp.0: (optional) Initial snowpack value. Default is 0.
@@ -207,21 +217,14 @@ get_freeze = function (jtemp, tmean, jrange)
 #   jtemp: the Jennings temperature extracted from the raster based on latitude and longitude.
 #   snow: A time series vector of snowfall values.
 #   jrange:
-#I edited this to include Final Hock which did not Exist in R, it just had one hock value
-# I also added jrange to this function
-#This function has two parts; the first sets the first values. 
-#The for loop iterates starting at 2 because the first one has been set
-get_melt = function (rain, sp.0, hockros, hock, tmean, jtemp, snow, jrange) 
-{
+# Returns:
+get_melt = function (rain, sp.0, hockros, hock, tmean, jtemp, snow, jrange) {
+  # Set initial values
   sp.0 = ifelse(!is.null(sp.0), sp.0, 0)
   finhock<- c()
-  finhock[1]<- if (rain[1]>0&sp.0>0) {
-    hockros
-  } else if (rain[1]==0 &sp.0>0) {
-    hock
-  } else {
-    0
-  }
+  finhock[1]<- if (rain[1]>0&sp.0>0) hockros
+  else if (rain[1]==0 &sp.0>0) hock
+  else 0
   low = jtemp-jrange
   melt <- vector()
   melt[1] = ifelse(tmean[1] < low | sp.0 == 0, 0, 
@@ -229,7 +232,7 @@ get_melt = function (rain, sp.0, hockros, hock, tmean, jtemp, snow, jrange)
   snowpack <- vector()
   snowpack[1] = sp.0 + snow[1] - melt[1]
   
-  
+  # Iterate through the remainder of the time series
   for (i in 2:length(tmean)) {
     finhock[i]<- if (rain[i]>0&snowpack[i-1]>0) {
       hockros
@@ -276,19 +279,36 @@ get_runoff = function (w, d_soil, AET, RainDRO)
   return(runoff)
 }
 
+# Calculate adjusted runoff
+# Update: use gw_add and vfm to adjust runoff
+# Args:
+#   orig: vector containing initial runoff values
+#   gw_add: amount of water contributed to the streamflow by groundwater, also known as baseflow (mm)
+#   vfm: volume forcing multiplier (1 corresponds to no change in volume)
+# Returns:
+#   Vector of runoff multiplied by vfm, with groundwater addition added
 #I added this function for adjusting the runoff
 get_adj_runoff= function(orig, gw_add, vfm){
   adjusted = (orig*vfm)+gw_add
   return(adjusted)
 }
 
-#I added this function for adjusting the Gridmet Precip and temperature data
+
+# Adjust precipitation and temperature data
+# Update: function did not exist before
+# Args:
+#   orig: vector with original meteorological data (i.e. temperature or precip)
+#   bias: addition component of bias correction
+#   slopeadj: multiplication component of bias correction
+# Returns:
+#   Vector of bias-corrected meteorological data, multiplied by slope adjustment and with bias added
 get_slope_bias_adj= function(orig, bias, slopeadj){
   adjusted = orig*slopeadj+bias
   return(adjusted)
 }
 
 # Convert Kelvin to Celsius
+# Update: function did not exist before
 # Args:
 #   kelvin: vector or value of temperature in K
 # Returns:
@@ -298,6 +318,7 @@ kelvin_to_celcius <- function(kelvin) {
 }
 
 # Temperature threshold using Jennings et al., 2018 to partition rain and snow: Extracts the rain-snow temperature threshold from a raster.
+# Update: moved call to raster outside function and fixed incorrect order of coordinates
 # Args:
 #   lat: Latitude of the site (degrees).
 #   lon: Longitude of the site (degrees).
@@ -313,6 +334,7 @@ get_jtemp = function(lat, lon, j.raster){
 }
 
 # Extract elevation for given location using DayMet dataset
+# Update: function did not exist before 
 # Note, if the format of the DayMet data changes, this function may not perform correctly
 # It relies on the elevation being in a specific row and column and having specific text around it
 # consider finding different way to get elevation, without daymetr package? daymetr package is not used elsewhere in the code
