@@ -57,6 +57,7 @@ if(provide_coords) lat = 37.9; lon = -122.59
 # for GridMET and stream gage; Daymet period starts one year after this period 
 startY = 1979; startM = 01; startD = 01 
 endY = 2024; endM = 12; endD = 31
+if(delayStart){ cutoffYear = startY+11 }else{cutoffYear = startY} 
 
 
 ### Model names ###
