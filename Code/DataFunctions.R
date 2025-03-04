@@ -246,19 +246,20 @@ get_maca_data_area <- function(){
 
 
 
-# Pull Mike water balance data for a single point from online
+# Pull gridded water balance data for a single point from CONUS model
+# More details about the gridded product can be found:
+# https://www.yellowstoneecology.com/research/Gridded_Water_Balance_Model_Version_2_User_Manual.pdf
 # Args:
 #   SiteID_FileName
 #   lat, lon: Latitude and longitude of site, in degrees
 #   startY_future, endY_future: start and end years of future projection period
 # Returns:
-#   Mike water balance data, which is also saved as a csv file
+#   Gridded water balance data for CONUS, which is saved as a csv file
 # NOTES: 
 # "agdd", fix this - return when agdd is back on the website; make sure to put agdd BEFORE AET - will mess up code if agdd is last
 # MODIFIED from Janelle/Connor code
-# STILL EDITING: mike tercek's website appears to be down. is this a good name?
-get_gridded_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
-  holder <- NULL 
+# STILL EDITING: mike tercek's website appears to be down. next step: TEST
+get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
   future_wb <- NULL
   # Loop through and pull data for each GCM, RCP, year, and variable
   for(GCM in gcm_list){
@@ -271,43 +272,35 @@ get_gridded_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future
         } else {enddate <- paste(yr + 1, "01-01", sep = "-")}
         var_holder <- NULL
         for(climvar in c("soil_water", "runoff", "rain","accumswe", "PET", "Deficit", "AET")){
+          holder <- NULL 
           data_url<-paste("http://www.yellowstone.solutions/thredds/ncss/daily_or_monthly/gcm/",RCP,"/",GCM,"/V_1_5_",yr,"_",GCM,"_",RCP,"_",climvar,".nc4?var=",climvar,"&latitude=",lat,"&longitude=",lon,"&time_start=",yr,"-01-01T12%3A00%3A00Z&time_end=",enddate,"T12%3A00%3A00Z&accept=csv_file",sep ="") 
           
           # test url: http://www.yellowstone.solutions/thredds/ncss/daily_or_monthly/gcm/rcp85/inmcm4/V_1_5_2099_inmcm4_rcp85_soil_water_monthly.nc4?var=soil_water&latitude=45&longitude=-111&time_start=2099-01-16T05%3A14%3A31.916Z&time_end=2099-12-17T00%3A34%3A14.059Z&accept=csv_file
           
           holder <-data.frame(fread(data_url, verbose=FALSE, showProgress = FALSE,)) 
-          colnames(holder) <- c("time", "latitude", "longitude", paste(climvar))
+          colnames(holder) <- c("date", "latitude", "longitude", paste(climvar))
           holder$GCM <- GCM; holder$RCP <- RCP
           if(is.null(var_holder)){
             var_holder <- holder
           } else{
             var_holder <- merge(var_holder, holder)}
-          #date <- future_wb$time # dates don't download correctly without this
         }
         model_holder <- rbind(model_holder, var_holder)
       }
-      future_wb<-rbind(future_wb, model_holder)
+      future_wb <- rbind(future_wb, model_holder)
     }
-    # Possibly may need to edit future_wb dataframe
-    # mydat4<-cbind(mydat3,mydat2) #join the data with metadata including date, lat, long
-    #colnames(mydat4)[]<-c("date", "lat","lon","soil_water_daily_wc", "runoff_daily_wc", "rain_daily_wc",  "accumswe_daily_wc", "pet_daily_wc", "deficit_daily_wc", "aet_daily_wc", "soil_water_daily_bc", "runoff_daily_bc", "rain_daily_bc",  "accumswe_daily_bc", "pet_daily_bc", "deficit_daily_bc", "aet_daily_bc")
-    #mydat5 <- mydat4 %>% mutate(lat = as.character(lat),lon = as.character(lon)) %>% mutate_if(is.numeric, divide_by_10)
+    # Clean data
+    future_wb <- future_wb[future_wb$soil_water != -32767, ]
+    future_wb$time <- as.Date(future_wb$time)
+    future_wb$projection <- paste(future_wb$GCM, future_wb$RCP, sep='.')
+    future_wb <- subset(future_wb, select = -c(latitude, longitude, GCM, RCP))
+    
+    # convert from mm to in 
+    future_wb <- future_wb %>% dplyr::mutate(across(where(is.numeric), ~ . / 25.4))
   }
-  write.csv(future_wb, file.path(dataPath, paste("WB",SiteID_FileName,"2023_2100.csv", sep = "_")))
+  write.csv(future_wb, file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))
   return(future_wb)
 }
-
-
-
-# Divide x by 10 (for WB extraction code)
-# Args:
-#   x: Numeric value or array to be divided by 10
-# Returns:
-#   Numeric value or array divided by 10
-divide_by_10 <- function(x, na.rm = FALSE) {
-  return(x/10)
-}
-
 
 
 

@@ -24,8 +24,8 @@
 ### Load libraries ###
 library(sf); library(raster); library(ggplot2); library(dplyr); library(xts); library(geosphere)
 library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse)
-library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); 
-library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally)
+library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
+library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table)
 
 ### Source in function files ###
 path <- here() 

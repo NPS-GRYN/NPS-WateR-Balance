@@ -16,7 +16,7 @@
 gcm_list <- c('BNU-ESM', 'CCSM4', 'CNRM-CM5', 'CSIRO-Mk3-6-0', 'CanESM2','GFDL-ESM2G', 'HadGEM2-CC365', 
               'IPSL-CM5A-LR', 'MIROC5', 'MIROC-ESM-CHEM','MRI-CGCM3', 'NorESM1-M', 'inmcm4')
 
-### Use Mike Tercek's pre-generated gridded water balance model for future projections ###
+### Use Mike Tercek's pre-generated gridded CONUS water balance model for future projections ###
 if(!runFutureWB){
   if(file.exists(file.path(dataPath, paste("WB",SiteID_FileName,"2023_2100.csv", sep = "_")))){
     future_wb <- read.csv(file.path(dataPath, paste("WB",SiteID_FileName,"2023_2100.csv", sep = "_"))) 
@@ -31,7 +31,7 @@ if(!runFutureWB){
     future_wb$adj_runoff<- get_adj_runoff(future_wb$runoff, gw_add = gw_add, vfm = vfm)
   } else{
     # EDITING
-    future_wb <- get_gridded_wb(datapath, 'gridMET', SiteID_FileName, lat, lon, startY, endY, 2099, endY)
+    future_wb <- get_conus_wb(datapath, 'gridMET', SiteID_FileName, lat, lon, startY, endY, 2099, endY)
   }
 }
 
@@ -67,13 +67,13 @@ if(runFutureWB){
 if(runFutureWB){
   if(file.exists(file.path(dataPath, paste("WB",SiteID_FileName,"2023_2100.csv", sep = "_")))){
     # read in gridded WB projections
-    future_wb_grid <- read.csv(file.path(dataPath, paste("WB",SiteID_FileName,"2023_2100.csv", sep = "_"))) 
-    future_wb_grid$Date <- as.Date(future_wb_grid$Date, '%m/%d/%Y')
-    future_wb_grid<-subset(future_wb_grid, projection !="MIROC-ESM-CHEM.rcp85")   # drop "MIROC-ESM-CHEM.rcp85" because it doesn't have an associated RCP 4.5
-    gcms<-unique(future_wb_grid$projection)
-    future_wb_grid<-cbind(future_wb_grid[,c("Date","projection")], 25.4*(future_wb_grid[,c(which(colnames(future_wb_grid)=="Deficit.in"):ncol(future_wb_grid))]))
-    colnames(future_wb_grid)<- c("Date", "projection", "Deficit", "AET", "soil_water", "runoff", "rain", "accumswe", "PET")
-    future_wb_grid$adj_runoff<- get_adj_runoff(future_wb_grid$runoff, gw_add = gw_add, vfm = vfm)
+    future_wb_conus <- read.csv(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_"))) 
+    future_wb_conus$Date <- as.Date(future_wb_conus$Date, '%m/%d/%Y')
+    future_wb_conus<-subset(future_wb_conus, projection !="MIROC-ESM-CHEM.rcp85")   # drop "MIROC-ESM-CHEM.rcp85" because it doesn't have an associated RCP 4.5
+    gcms<-unique(future_wb_conus$projection)
+    future_wb_conus<-cbind(future_wb_conus[,c("Date","projection")], 25.4*(future_wb_conus[,c(which(colnames(future_wb_conus)=="Deficit.in"):ncol(future_wb_conus))]))
+    colnames(future_wb_conus)<- c("Date", "projection", "Deficit", "AET", "soil_water", "runoff", "rain", "accumswe", "PET")
+    future_wb_conus$adj_runoff<- get_adj_runoff(future_wb_conus$runoff, gw_add = gw_add, vfm = vfm)
     
     # read in calculated WB projections
     future_wb_calc <- read.csv(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))
@@ -83,15 +83,15 @@ if(runFutureWB){
     # plot AET, deficit, adj runoff for a sample year and a sample model
     model_run = 'HadGEM2-CC365.rcp45'; yr = 2060
     if(make_plots){
-      plot_aet <- ggplot() + geom_line(data=future_wb_grid %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=AET), col='black')+
+      plot_aet <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=AET), col='black')+
         geom_line(data=future_wb_calc %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=AET), col='red')+
         labs(x='Date',y='AET [mm]', title='Actual Evapotranspiration') +
         theme(legend.position = "none") + nps_theme()
-      plot_d <- ggplot() + geom_line(data=future_wb_grid %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=Deficit), col='black')+
+      plot_d <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=Deficit), col='black')+
         geom_line(data=future_wb_calc %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=D), col='red')+
         labs(x='Date',y='Deficit [mm]', title='Deficit') +
         theme(legend.position = "none") + nps_theme()
-      plot_run <- ggplot() + geom_line(data=future_wb_grid %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=adj_runoff, col='Gridded WB'))+
+      plot_run <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=adj_runoff, col='Gridded WB'))+
         geom_line(data=future_wb_calc %>% filter(projection==model_run& year(Date)==yr), aes(x=Date, y=adj_runoff, col='Calculated WB'))+
         labs(x='Date',y='Adjusted Runoff [mm]', title='Adjusted Runoff') +  
         scale_color_manual(values = c("Gridded WB"="black", "Calculated WB"="red"), name="WB Projections") + nps_theme()
@@ -101,7 +101,7 @@ if(runFutureWB){
       grid.arrange(plot_aet, plot_d, plot_run, ncol = 3, widths=c(1,1,1.3), top = textGrob(paste('WB Projection Comparisons for', model_run, ':', yr),gp=gpar(fontsize=30)))
       dev.off() 
     }
-  } else{print("Cannot compare future water balances: pre-calculated gridded water balance file does not exist.")}
+  } else{print("Cannot compare future water balances: pre-calculated CONUS gridded water balance file does not exist.")}
 }
 
 

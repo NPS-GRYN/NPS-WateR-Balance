@@ -22,8 +22,8 @@
 ### Load libraries ###
 library(sf); library(raster); library(ggplot2); library(dplyr); library(xts); library(geosphere)
 library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse)
-library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); 
-library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally)
+library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
+library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table)
 
 ### Source in function files ###
 path <- here() 
@@ -33,7 +33,7 @@ setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setw
 #######################################################################
 ### Set user-defined variables ###
 PETMethod = "Oudin" 
-optimization = TRUE 
+optimization = FALSE 
 delayStart = TRUE 
 NonZeroDrainInitCoeff = FALSE
 incompleteMonths = FALSE 
@@ -45,12 +45,12 @@ userSetJTemp = FALSE
 make_plots = TRUE 
 provide_coords = FALSE # if true, user provides lat/lon coords. if false, lat/lon coords are pulled from centroid of watershed with given gage id
 flow_components = 3  # change the number of components that characterize the flow. can be 2 or 3. 2: flow has quick and slow components; 3: flow has quick, slow, and very slow components.
-FolderName = "optim" 
+FolderName = "non_optim" 
 
 ### Define watershed ###
 # centroid of watershed
-SiteID = "Cataloochee"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
-GageSiteID <- '03460000'                  #define stream gage location (RWC: "11460151")
+SiteID = "Redwood Creek"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
+GageSiteID <- '11460151'                  #define stream gage location (RWC: "11460151")
 if(provide_coords) lat = 37.9; lon = -122.59 
 
 ### Define time period for historical analysis ###
@@ -442,6 +442,31 @@ if(make_plots){
   plot(xts(hist_flow_ann[,c('Mod','Meas')], order.by=as.Date(index(apply.yearly(hist_flow_daily, sum)))), 
        type = "l", lwd = 2, xlab = "Date", ylab = "Annual Sum Streamflow (mm)", main = "Annual", col=c('red','black'))
   print(xts::addLegend("topleft", legend.names = c("Modeled", "Measured"), lty=1, col= c("red", "black")))
+  dev.off()
+}
+
+# time series plot of historical annual streamflow trends (measured and modeled)
+# EDITING
+if(make_plots){
+  jpeg(file=paste0(outLocationPath, "/", "Historical_Measured_Modeled_Trends.jpg"), width=1000, height=400); par(mfrow=c(1,2))
+  
+  plot(hist_flow_ann$Meas, type = "l", lwd = 2, xlab = "Date", ylab = "Annual Sum Streamflow (mm)", main = "Annual Measured Streamflow")
+  meas_fit <- lm(hist_flow_ann$Meas ~ index(hist_flow_ann$Meas))
+  abline(meas_fit, col= "red")
+  meas_mk <- MannKendall(hist_flow_ann$Meas)
+  if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
+  }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+  #legend("topleft", legend = c("Measured", label), lty = 1, col = c("black", "red"))
+  #print(xts::addLegend("topleft", legend.names = c("Measured", ""), lty=1, col= c('black','red')))
+  
+  plot(hist_flow_ann$Mod, type = "l", lwd = 2, xlab = "Date", ylab = "Annual Sum Streamflow (mm)", main = "Annual Modeled Streamflow")
+  mod_fit <- lm(hist_flow_ann$Mod ~ index(hist_flow_ann$Mod))
+  abline(mod_fit, col= "red")
+  mod_mk <- MannKendall(hist_flow_ann$Mod)
+  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', mod_mk$sl)
+  }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', mod_mk$sl)}
+  #print(xts::addLegend("topleft", legend.names = c("Modeled", label), lty=1, col= c('black','red')))
+  #legend("topleft", legend = c("Modeled", label), lty = 1, col = c("black", "red"))
   dev.off()
 }
 
