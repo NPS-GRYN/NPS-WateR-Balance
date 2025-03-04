@@ -260,8 +260,14 @@ get_maca_data_area <- function(){
 # MODIFIED from Janelle/Connor code
 # STILL EDITING: mike tercek's website appears to be down. next step: TEST
 get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
+  # Return file if it exists
+  if(file.exists(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))){
+    future_wb <- read.csv(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))
+    return(future_wb)
+  }
+  
+  # Pull data from online for each GCM, RCP, and year
   future_wb <- NULL
-  # Loop through and pull data for each GCM, RCP, year, and variable
   for(GCM in gcm_list){
     for(RCP in c("rcp85", "rcp45")){
       print(paste("downloading", GCM, RCP))
@@ -330,6 +336,19 @@ get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileNa
     ET <- read.csv(file_path, '.csv')
   }
   return(ET)
+}
+
+
+
+# Function to calculate pseudo R-squared
+calculate_pseudo_r2 <- function(model, newdata, tau) {
+  preds <- predict(model, newdata = newdata)
+  tau_preds <- preds[, which(model$tau == tau)]
+  residuals <- newdata$Meas - tau_preds
+  rss <- sum(residuals^2)
+  tss <- sum((newdata$Meas - mean(newdata$Meas))^2)
+  r2 <- 1 - (rss / tss)
+  return(r2)
 }
 
   

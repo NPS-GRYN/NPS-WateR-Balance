@@ -20,7 +20,7 @@
 
 #######################################################################
 ### Load libraries ###
-library(sf); library(raster); library(ggplot2); library(dplyr); library(xts); library(geosphere)
+library(sf); library(raster); library(ggplot2); library(dplyr); library(xts); library(geosphere); library(quantreg)
 library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse)
 library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
 library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table)
@@ -40,7 +40,7 @@ incompleteMonths = FALSE
 GridMET = TRUE
 fillLeapDays = TRUE 
 future_analysis = TRUE
-runFutureWB = TRUE  # TRUE to re-run entire water balance model for future; FALSE to use pre-existing water balance projections from a Mike Tercek spreadsheet
+calcFutureWB = TRUE  # TRUE to re-run entire water balance model for future; FALSE to use pre-existing CONUS water balance projections from a Mike Tercek spreadsheet
 userSetJTemp = FALSE 
 make_plots = TRUE 
 provide_coords = FALSE # if true, user provides lat/lon coords. if false, lat/lon coords are pulled from centroid of watershed with given gage id
@@ -56,7 +56,7 @@ if(provide_coords) lat = 37.9; lon = -122.59
 ### Define time period for historical analysis ###
 # for GridMET and stream gage; Daymet period starts one year after this period 
 startY = 1979; startM = 01; startD = 01 
-endY = 2024; endM = 12; endD = 31
+endY = 2023; endM = 12; endD = 31
 if(delayStart){ cutoffYear = startY+11 }else{cutoffYear = startY} 
 
 
@@ -395,7 +395,7 @@ for(i in 1:ncol(hist_flow_daily)){
 
 
 #######################################################################
-### Create plots ### - DOUBLE CHECK ALL OF THESE FOR ACCURACY/CONSISTENTCY
+### Create summary plots ### - DOUBLE CHECK ALL OF THESE FOR ACCURACY/CONSISTENTCY
 
 # scatterplot of Historical Measured vs Modeled Streamflow for daily, monthly, annual aggregation
 # there are two trend lines in the scatter plot because the intercept is set to 0 in one and allowed to vary in the other
@@ -446,27 +446,33 @@ if(make_plots){
 }
 
 # time series plot of historical annual streamflow trends (measured and modeled)
-# EDITING
 if(make_plots){
-  jpeg(file=paste0(outLocationPath, "/", "Historical_Measured_Modeled_Trends.jpg"), width=1000, height=400); par(mfrow=c(1,2))
-  
-  plot(hist_flow_ann$Meas, type = "l", lwd = 2, xlab = "Date", ylab = "Annual Sum Streamflow (mm)", main = "Annual Measured Streamflow")
-  meas_fit <- lm(hist_flow_ann$Meas ~ index(hist_flow_ann$Meas))
-  abline(meas_fit, col= "red")
   meas_mk <- MannKendall(hist_flow_ann$Meas)
   if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
   }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
-  #legend("topleft", legend = c("Measured", label), lty = 1, col = c("black", "red"))
-  #print(xts::addLegend("topleft", legend.names = c("Measured", ""), lty=1, col= c('black','red')))
   
-  plot(hist_flow_ann$Mod, type = "l", lwd = 2, xlab = "Date", ylab = "Annual Sum Streamflow (mm)", main = "Annual Modeled Streamflow")
-  mod_fit <- lm(hist_flow_ann$Mod ~ index(hist_flow_ann$Mod))
-  abline(mod_fit, col= "red")
+  plot_meas <- ggplot(hist_flow_ann, aes(x = index(Meas), y = Meas)) + geom_line(aes(color = 'Measured'), linewidth=1) +
+    geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
+    labs(x = "Date", y = "Annual Sum Streamflow (mm)", title = "Annual Measured Streamflow", color='') +
+    nps_theme() + theme(legend.position = 'bottom') +
+    scale_color_manual(values = c("Measured" = "black", "Trend" = "red")) +
+    annotate("text", x = max(index(hist_flow_ann$Meas)), y = max(hist_flow_ann$Meas), label = label, color = "black", hjust = 1, vjust = 1)
+  plot_meas
+  
   mod_mk <- MannKendall(hist_flow_ann$Mod)
   if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', mod_mk$sl)
   }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', mod_mk$sl)}
-  #print(xts::addLegend("topleft", legend.names = c("Modeled", label), lty=1, col= c('black','red')))
-  #legend("topleft", legend = c("Modeled", label), lty = 1, col = c("black", "red"))
+
+  plot_mod <- ggplot(hist_flow_ann, aes(x = index(Mod), y = Mod)) + geom_line(aes(color = 'Modeled'), linewidth=1) +
+    geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
+    labs(x = "Date", y = "Annual Sum Streamflow (mm)", title = "Annual Modeled Streamflow", color='') +
+    nps_theme() + theme(legend.position = 'bottom') +
+    scale_color_manual(values = c("Modeled" = "black", "Trend" = "red")) +
+    annotate("text", x = max(index(hist_flow_ann$Mod)), y = max(hist_flow_ann$Mod), label = label, color = "black", hjust = 1, vjust = 1)
+  plot_mod
+  
+  jpeg(file=paste0(outLocationPath, "/", "Historical_Measured_Modeled_Trends.jpg"), width=1000, height=400)
+  grid.arrange(plot_meas, plot_mod, ncol = 2) 
   dev.off()
 }
 
@@ -477,6 +483,40 @@ if(make_plots){
   print(xts::addLegend("topleft", legend.names = c("Modeled", "Measured"), lty=1, col= c("red", "black")))
   dev.off()
 }
+
+
+#######################################################################
+### Assess model accuracy ###
+
+# model accuracy in capturing extreme events
+high_flow_q = 0.99
+high_flow_meas = quantile(hist_flow_daily$Meas, high_flow_q)
+high_flow_mod = quantile(hist_flow_daily$Mod, high_flow_q) 
+
+low_flow_q = 0.1
+low_flow_meas = quantile(hist_flow_daily$Meas, low_flow_q)
+low_flow_mod = quantile(hist_flow_daily$Mod, low_flow_q)
+
+
+
+
+# Quantile regression and plot
+model <- rq(Meas ~ Mod, data = hist_flow_daily, tau = c(0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99))
+r2_values <- sapply(model$tau, function(t) calculate_pseudo_r2(model, hist_flow_daily, t)) # calculate psuedo r2 for each quantile
+r2_results <- data.frame(tau = model$tau, pseudo_r2 = r2_values)
+
+colors = brewer.pal(n = 7, name = "RdYlBu") 
+line_data <- data.frame(intercept = coef(model)[seq(1, length(coef(model)), by = 2)], slope = coef(model)[seq(2, length(coef(model)), by = 2)],
+                        color = colors, tau = c(0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99))
+
+jpeg(file=paste0(outLocationPath, "/", "Historical_QuantileRegression_Scatter.jpg"), width=800, height=500)
+plot <- ggplot(hist_flow_daily, aes(Mod,Meas)) + geom_point() +   geom_abline(data = line_data, aes(intercept = intercept, slope = slope, color = factor(tau)), size=1.1) +
+  scale_color_manual(values = colors, labels = c(0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99), name = "Quantiles") +
+  theme(legend.position = "right")+ scale_x_continuous(limits = c(1, NA)) + labs(title="Quantile Regression of Daily Historical Streamflow",y="Measured Streamflow", x="Modeled Streamflow")+
+  scale_color_manual(values = colors, labels = c(bquote(bold("0.01:") * " -0.047"), bquote(bold("0.1:")*" 0.132"), bquote(bold("0.25:")*" 0.395"), bquote(bold("0.5:")*" 0.624"), bquote(bold("0.75:")*" 0.602"), bquote(bold("0.9:")*" 0.323"), bquote(bold("0.99:")*" -2.09")), name = "Pseudo R2 by Quantile") + 
+  nps_theme() 
+plot
+dev.off()
 
 
 
