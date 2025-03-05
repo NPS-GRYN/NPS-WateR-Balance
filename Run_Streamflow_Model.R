@@ -498,6 +498,30 @@ low_flow_meas = quantile(hist_flow_daily$Meas, low_flow_q)
 low_flow_mod = quantile(hist_flow_daily$Mod, low_flow_q)
 
 
+# heatmap - monthly 
+MeasMod$Month <- month(as.Date(paste(MeasMod$YrMon, "-01", sep=""), format="%Y-%m-%d"))
+MeasMod$Year <- year(as.Date(paste(MeasMod$YrMon, "-01", sep=""), format="%Y-%m-%d"))
+ggplot(MeasMod, aes(factor(month), year, fill = Meas)) + geom_tile() +
+  scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu")) +
+  labs(title = "Measured monthly streamflow", x='Month', fill = "Streamflow [cfs]") +
+  scale_x_discrete(labels = c("1" = "January", "2" = "February", "3" = "March", 
+                              "4" = "April", "5" = "May", "6" = "June", 
+                              "7" = "July", "8" = "August", "9" = "September", 
+                              "10" = "October", "11" = "November", "12" = "December")) +
+  nps_theme() + theme(axis.text.x = element_text(angle = 90))
+
+# heatmap - daily
+hist_flow_daily_df <- data.frame(date = index(hist_flow_daily), coredata(hist_flow_daily))
+hist_flow_daily_df$mon_day <- paste0(month(index(hist_flow_daily)), '-', day(index(hist_flow_daily)))
+hist_flow_daily_df$mon_day <- factor(hist_flow_daily_df$mon_day, levels = unique(hist_flow_daily_df$mon_day))
+ggplot(hist_flow_daily_df, aes(mon_day, year, fill = as.numeric(Meas))) + geom_tile() +
+  scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu")) +
+  labs(title = "Measured daily streamflow", x='Month', fill = "Streamflow [cfs]") +
+  #scale_x_discrete(labels = c("1" = "January", "2" = "February", "3" = "March", 
+   #                           "4" = "April", "5" = "May", "6" = "June", 
+    #                          "7" = "July", "8" = "August", "9" = "September", 
+     #                         "10" = "October", "11" = "November", "12" = "December")) +
+  nps_theme() #+ theme(axis.text.x = element_text(angle = 90))
 
 
 # Quantile regression and plot
