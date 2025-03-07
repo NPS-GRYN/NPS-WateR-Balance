@@ -21,9 +21,9 @@
 #######################################################################
 ### Load libraries ###
 library(sf); library(raster); library(ggplot2); library(dplyr); library(xts); library(geosphere); library(quantreg)
-library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse)
+library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse); library(RColorBrewer)
 library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
-library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table)
+library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table); library(plotly)
 
 ### Source in function files ###
 path <- here() 
@@ -498,30 +498,117 @@ low_flow_meas = quantile(hist_flow_daily$Meas, low_flow_q)
 low_flow_mod = quantile(hist_flow_daily$Mod, low_flow_q)
 
 
-# heatmap - monthly 
+# Heatmap - monthly 
 MeasMod$Month <- month(as.Date(paste(MeasMod$YrMon, "-01", sep=""), format="%Y-%m-%d"))
 MeasMod$Year <- year(as.Date(paste(MeasMod$YrMon, "-01", sep=""), format="%Y-%m-%d"))
-ggplot(MeasMod, aes(factor(month), year, fill = Meas)) + geom_tile() +
+jpeg(file=paste0(outLocationPath, "/", "Historical_Monthly_Heatmap.jpg"), width=600, height=400)
+ggplot(MeasMod, aes(factor(Month), Year, fill = Meas)) + geom_tile() +
   scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu")) +
-  labs(title = "Measured monthly streamflow", x='Month', fill = "Streamflow [cfs]") +
+  labs(title = "Measured monthly streamflow", x='Month', fill = "Streamflow [mm]") +
   scale_x_discrete(labels = c("1" = "January", "2" = "February", "3" = "March", 
                               "4" = "April", "5" = "May", "6" = "June", 
                               "7" = "July", "8" = "August", "9" = "September", 
                               "10" = "October", "11" = "November", "12" = "December")) +
   nps_theme() + theme(axis.text.x = element_text(angle = 90))
+dev.off()
 
-# heatmap - daily
+
+# Heatmap - daily
 hist_flow_daily_df <- data.frame(date = index(hist_flow_daily), coredata(hist_flow_daily))
-hist_flow_daily_df$mon_day <- paste0(month(index(hist_flow_daily)), '-', day(index(hist_flow_daily)))
-hist_flow_daily_df$mon_day <- factor(hist_flow_daily_df$mon_day, levels = unique(hist_flow_daily_df$mon_day))
-ggplot(hist_flow_daily_df, aes(mon_day, year, fill = as.numeric(Meas))) + geom_tile() +
-  scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu")) +
-  labs(title = "Measured daily streamflow", x='Month', fill = "Streamflow [cfs]") +
-  #scale_x_discrete(labels = c("1" = "January", "2" = "February", "3" = "March", 
-   #                           "4" = "April", "5" = "May", "6" = "June", 
-    #                          "7" = "July", "8" = "August", "9" = "September", 
-     #                         "10" = "October", "11" = "November", "12" = "December")) +
-  nps_theme() #+ theme(axis.text.x = element_text(angle = 90))
+hist_flow_daily_df$year <- year(hist_flow_daily_df$date); hist_flow_daily_df$day <- yday(index(hist_flow_daily))
+hist_flow_daily_df <- hist_flow_daily_df[hist_flow_daily_df$day != 366, ]
+hist_flow_daily_df$day <- factor(hist_flow_daily_df$day, levels = unique(hist_flow_daily_df$day))
+jpeg(file=paste0(outLocationPath, "/", "Historical_Daily_Heatmap.jpg"), width=600, height=400)
+ggplot(hist_flow_daily_df, aes(day, year, fill = as.numeric(Meas))) + geom_tile() +
+  scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu"), trans='log', breaks=c(min(hist_flow_daily_df$Meas), 0.01, 0.1, 10, 100, max(hist_flow_daily_df$Meas)), 
+                       labels=c(sprintf('%.3f',  min(hist_flow_daily_df$Meas)),'.01','0.1','10', '100', sprintf('%.0f',  max(hist_flow_daily_df$Meas)))) +
+  labs(title = "Measured daily streamflow", x='Month', fill = "Streamflow [mm]") +
+  scale_x_discrete(breaks=c("1", "32", "60", "91", "121", "152", "182", "213", "244", "274", "305", "335"), 
+                   labels = c("1" = "January", "32" = "February", "60" = "March", "91" = "April", "121" = "May", "152" = "June", 
+                              "182" = "July", "213" = "August", "244" = "September", "274" = "October", "305" = "November", "335" = "December")) +
+  theme(axis.text.x = element_text(angle = 90))
+dev.off()
+hist_flow_daily_df$day <- as.numeric(hist_flow_daily_df$day)
+
+
+# 3D raster hydrograph
+
+# try with plotly
+z_matrix <- reshape((hist_flow_daily_df %>% select(c('day','year','Meas')) %>% arrange(as.numeric(day))), idvar = "year", timevar = "day", direction = "wide")
+rownames(z_matrix) <- z_matrix$year
+colnames(z_matrix) <- sub("Meas.", "", colnames(z_matrix))
+z_matrix <- as.matrix(z_matrix %>% select(-'year'))
+fig <- plot_ly(z = z_matrix, x=colnames(z_matrix), y=rownames(z_matrix)) %>% add_surface() %>% 
+  layout(title = paste(SiteID, "3D Hydrograph"),
+  scene = list(xaxis = list(title = 'Year'), yaxis = list(title = 'Day of year'), zaxis = list(title = 'Streamflow [mm]')), 
+  legend = list(title = list(text = 'Streamflow [mm]')))
+fig
+
+# [hist_flow_daily_df$year == 2020, ]
+fig <- plot_ly(data=hist_flow_daily_df, z=~Meas, x=~year, y=~day, type='scatter3d', mode='lines', color=~Meas) %>% 
+  layout(title = paste(SiteID, "3D Hydrograph"),
+         scene = list(xaxis = list(title = 'Year'), yaxis = list(title = 'Day of year'), zaxis = list(title = 'Streamflow [mm]')), 
+         legend = list(title = list(text = 'Streamflow [mm]')))
+fig
+
+
+# try again w loop
+fig <- plot_ly() %>% layout(title = paste(SiteID, "3D Hydrograph"),
+                            scene = list(xaxis = list(title = 'Year'), yaxis = list(title = 'Day of year'), zaxis = list(title = 'Streamflow [mm]')), 
+                            legend = list(title = list(text = 'Streamflow [mm]')))
+for(year in rownames(z_matrix)){
+  year_data <- as.matrix(z_matrix[rownames(z_matrix) == year, ])
+  fig <- fig %>% add_surface(z=year_data, x=colnames(z_matrix), y=rownames(z_matrix),
+                             showscale = ifelse(year == rownames(z_matrix)[1], TRUE, FALSE))
+}
+fig
+
+
+
+# try w loop
+fig <- plot_ly() %>% layout(title = paste(SiteID, "3D Hydrograph"),
+                            scene = list(yaxis = list(title = 'Year'), xaxis = list(title = 'Day of year'), zaxis = list(title = 'Streamflow [mm]')), 
+                            coloraxis = list(colorbar = list(text = 'Streamflow [mm]')))
+for(year in unique(hist_flow_daily_df$year)) {
+  year_data <- hist_flow_daily_df[hist_flow_daily_df$year == year, ]
+  
+  # Create 3D scatter plot for each year
+  fig <- fig %>% add_trace(x = year_data$day, y = rep(year, nrow(year_data)), z = year_data$Meas, color = year_data$Meas, #colors = c('YlGnBu'), 
+                           type = 'scatter3d', mode = 'lines', line = list(width = 4), 
+                           name = as.character(year), showlegend=FALSE)
+  
+  # simulate fill
+  # fig <- fig %>% add_trace(
+  #   x = year_data$day,
+  #   y = rep(year, nrow(year_data)),
+  #   z = rep(min(year_data$Meas), nrow(year_data)),  # Start from the minimum value of Meas
+  #   fill = 'tozeroy',  # Fills to the zero value of Z
+  #   color = year_data$Meas,
+  #   colors = 'YlGnBu',  # Set color scale
+  #   type = 'scatter3d',
+  #   mode = 'lines',
+  #   fill= 'tonexty',
+  #   fillcolor = 'rgba(0, 100, 255, 0.3)',  # Adjust transparency to fill
+  #   line = list(width = 0),  # Hide the line for filling trace
+  #   showlegend = FALSE  # Hide this fill trace from the legend
+  # )
+  
+}
+fig
+
+ 
+
+
+
+# try with rgl
+z_matrix <- reshape((hist_flow_daily_df %>% select(c('mon_day','year','Meas'))), idvar = "mon_day", timevar = "year", direction = "wide")
+rownames(z_matrix) <- z_matrix$mon_day
+colnames(z_matrix) <- sub("Meas.", "", colnames(z_matrix))
+z_matrix <- as.matrix(z_matrix %>% select(-'mon_day'))
+open3d()
+surface3d(x=unique(as.numeric(hist_flow_daily_df$mon_day)), y=unique(as.numeric(hist_flow_daily_df$year)), z=as.matrix(z_matrix))
+rgl.postscript(paste0(outLocationPath, "/", '3d_hydrograph.pdf'), fmt = "pdf")
+
 
 
 # Quantile regression and plot
