@@ -484,20 +484,6 @@ if(make_plots){
   dev.off()
 }
 
-
-#######################################################################
-### Assess model accuracy ###
-
-# model accuracy in capturing extreme events
-high_flow_q = 0.99
-high_flow_meas = quantile(hist_flow_daily$Meas, high_flow_q)
-high_flow_mod = quantile(hist_flow_daily$Mod, high_flow_q) 
-
-low_flow_q = 0.1
-low_flow_meas = quantile(hist_flow_daily$Meas, low_flow_q)
-low_flow_mod = quantile(hist_flow_daily$Mod, low_flow_q)
-
-
 # Heatmap - monthly 
 MeasMod$Month <- month(as.Date(paste(MeasMod$YrMon, "-01", sep=""), format="%Y-%m-%d"))
 MeasMod$Year <- year(as.Date(paste(MeasMod$YrMon, "-01", sep=""), format="%Y-%m-%d"))
@@ -540,8 +526,8 @@ colnames(z_matrix) <- sub("Meas.", "", colnames(z_matrix))
 z_matrix <- as.matrix(z_matrix %>% select(-'year'))
 fig <- plot_ly(z = z_matrix, x=colnames(z_matrix), y=rownames(z_matrix)) %>% add_surface() %>% 
   layout(title = paste(SiteID, "3D Hydrograph"),
-  scene = list(xaxis = list(title = 'Year'), yaxis = list(title = 'Day of year'), zaxis = list(title = 'Streamflow [mm]')), 
-  legend = list(title = list(text = 'Streamflow [mm]')))
+         scene = list(xaxis = list(title = 'Year'), yaxis = list(title = 'Day of year'), zaxis = list(title = 'Streamflow [mm]')), 
+         legend = list(title = list(text = 'Streamflow [mm]')))
 fig
 
 # [hist_flow_daily_df$year == 2020, ]
@@ -549,18 +535,6 @@ fig <- plot_ly(data=hist_flow_daily_df, z=~Meas, x=~year, y=~day, type='scatter3
   layout(title = paste(SiteID, "3D Hydrograph"),
          scene = list(xaxis = list(title = 'Year'), yaxis = list(title = 'Day of year'), zaxis = list(title = 'Streamflow [mm]')), 
          legend = list(title = list(text = 'Streamflow [mm]')))
-fig
-
-
-# try again w loop
-fig <- plot_ly() %>% layout(title = paste(SiteID, "3D Hydrograph"),
-                            scene = list(xaxis = list(title = 'Year'), yaxis = list(title = 'Day of year'), zaxis = list(title = 'Streamflow [mm]')), 
-                            legend = list(title = list(text = 'Streamflow [mm]')))
-for(year in rownames(z_matrix)){
-  year_data <- as.matrix(z_matrix[rownames(z_matrix) == year, ])
-  fig <- fig %>% add_surface(z=year_data, x=colnames(z_matrix), y=rownames(z_matrix),
-                             showscale = ifelse(year == rownames(z_matrix)[1], TRUE, FALSE))
-}
 fig
 
 
@@ -576,27 +550,14 @@ for(year in unique(hist_flow_daily_df$year)) {
   fig <- fig %>% add_trace(x = year_data$day, y = rep(year, nrow(year_data)), z = year_data$Meas, color = year_data$Meas, #colors = c('YlGnBu'), 
                            type = 'scatter3d', mode = 'lines', line = list(width = 4), 
                            name = as.character(year), showlegend=FALSE)
-  
   # simulate fill
-  # fig <- fig %>% add_trace(
-  #   x = year_data$day,
-  #   y = rep(year, nrow(year_data)),
-  #   z = rep(min(year_data$Meas), nrow(year_data)),  # Start from the minimum value of Meas
-  #   fill = 'tozeroy',  # Fills to the zero value of Z
-  #   color = year_data$Meas,
-  #   colors = 'YlGnBu',  # Set color scale
-  #   type = 'scatter3d',
-  #   mode = 'lines',
-  #   fill= 'tonexty',
-  #   fillcolor = 'rgba(0, 100, 255, 0.3)',  # Adjust transparency to fill
-  #   line = list(width = 0),  # Hide the line for filling trace
-  #   showlegend = FALSE  # Hide this fill trace from the legend
-  # )
-  
+  # fig <- fig %>% add_trace(x = year_data$day, y = rep(year, nrow(year_data)), z = rep(min(year_data$Meas), nrow(year_data)), 
+  #   fill = 'tozeroy', color = year_data$Meas, colors = 'YlGnBu', type = 'scatter3d', mode = 'lines',
+  #   fill= 'tonexty', fillcolor = 'rgba(0, 100, 255, 0.3)', line = list(width = 0), showlegend = FALSE)
 }
 fig
 
- 
+
 
 
 
@@ -608,6 +569,48 @@ z_matrix <- as.matrix(z_matrix %>% select(-'mon_day'))
 open3d()
 surface3d(x=unique(as.numeric(hist_flow_daily_df$mon_day)), y=unique(as.numeric(hist_flow_daily_df$year)), z=as.matrix(z_matrix))
 rgl.postscript(paste0(outLocationPath, "/", '3d_hydrograph.pdf'), fmt = "pdf")
+
+
+
+
+#######################################################################
+### Assess model accuracy ###
+
+# model accuracy in capturing extreme events
+high_flow_q = 0.99
+high_flow_meas = quantile(hist_flow_daily$Meas, high_flow_q)
+high_flow_mod = quantile(hist_flow_daily$Mod, high_flow_q) 
+
+low_flow_q = 0.1
+low_flow_meas = quantile(hist_flow_daily$Meas, low_flow_q)
+low_flow_mod = quantile(hist_flow_daily$Mod, low_flow_q)
+
+# High and low flow scatter plots - simple quantile comparison
+historic_75 = quantile(hist_flow_daily$Meas, 0.75); historic_25 = quantile(hist_flow_daily$Meas, 0.25)
+high_flow = hist_flow_daily[hist_flow_daily$Meas > high_flow_meas, ]
+make_scatterplot(high_flow$Mod, high_flow$Mod, "High Flow (75th Percentile) Daily Historical")
+#jpeg(file=paste0(figPath, "/", paste0(gsub(" ", "_", title), "_Measured_Modeled_Scatter.jpg")))
+plot(coredata(high_flow$Mod), coredata(high_flow$Meas), main='High Flow (75th Percentile) Daily Historical Streamflow', xlab = "Modeled Streamflow", ylab = "Measured Streamflow", 
+     xlim=c(pmin(min(high_flow$Mod), min(high_flow$Meas)), pmax(max(high_flow$Mod), max(high_flow$Meas))), 
+     ylim=c(pmin(min(high_flow$Meas), min(high_flow$Mod)), pmax(max(high_flow$Meas), max(high_flow$Mod))))
+#abline(lm(coredata(high_flow$Meas) ~ 0 + coredata(high_flow$Mod)), col= "red")
+abline(lm(coredata(high_flow$Meas) ~ coredata(high_flow$Mod)), col= "red")
+
+# calcuLate statistics to locate on the plot
+nse_plot = NSE(coredata(high_flow$Mod), coredata(high_flow$Meas))
+r2_plot = R2(coredata(high_flow$Mod), coredata(high_flow$Meas))
+
+y_txt <- max(coredata(high_flow$Meas)) * (1/4)
+x_txt <- max(coredata(high_flow$Mod)) * (8/9)
+
+text(x = x_txt, y = y_txt, labels = sprintf("NSE: %.2f \nR2: %.2f",nse_plot, r2_plot), col = "red", cex = 1.2) 
+#dev.off()
+
+
+low_flow = (flow_meas %>% filter((date <= as.Date("2021-12-31")) & (daily_mm < historic_25)))
+make_scatterplot((flow_mod %>% filter(date %in% low_flow$date))$daily_mm, low_flow$daily_mm,
+                 "Low Flow (25th Percentile) Daily Historical")
+
 
 
 
