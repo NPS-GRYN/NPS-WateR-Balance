@@ -14,38 +14,88 @@
 #######################################################################
 # redefine gage site ID so this script can be run independently
 GageSiteID <- GageSiteID
+SiteID <- SiteID
+SiteID_FileName <- gsub(pattern = " ", x = SiteID, replacement = "")
+outLocationPathHist <- outLocationPathHist
+
+# create folder to store results of historical analysis
+if(!dir.exists(here('Data', SiteID_FileName))) {dir.create(here('Data', SiteID_FileName))}; dataPath <- here('Data', SiteID_FileName)
+if(!dir.exists(here('Output', SiteID_FileName, 'Historical'))) {dir.create(here('Output', SiteID_FileName, 'Historical'))}; outLocationPathHist <- here('Output', SiteID_FileName, 'Historical')
 
 
 
 #######################################################################
-### Get streamflow data in EGRET package format ###
+### Retrieve and format streamflow data ###
+
+# Get streamflow data
 gage_data <- get_gage_data(GageSiteID, FALSE, dataPath)
 DailyStream <- gage_data$DailyStream
 meas_flow_daily <- as.data.frame(gage_data$meas_flow_daily); meas_flow_mon <- gage_data$meas_flow_mon
-meas_flow_daily$Date <- rownames(meas_flow_daily); rownames(meas_flow_daily) <- NULL; colnames(meas_flow_daily) <- c('MeasMM', 'Date')
+meas_flow_daily$Date <- as.Date(rownames(meas_flow_daily)); rownames(meas_flow_daily) <- NULL; colnames(meas_flow_daily) <- c('MeasMM', 'Date')
 
+# Get watershed data
 INFO <- readNWISInfo(GageSiteID, "00060", interactive = FALSE)
-eList <- as.egret(INFO, DailyStream)
+watershed_area <- INFO$drain_area_va  # in square miles
 
 # information for EGRET package
 #printqUnitCheatSheet()
 #printFluxUnitCheatSheet()
 
-startY_meas <- year(DailyStream$Date[1]); endY_meas <-year(DailyStream$Date[nrow(DailyStream)])
-half_window <- min(endY, endY_meas) - max(startY_meas, startY)
+# Remove incomplete water years of data 
+# Start and end dates correspond to beginning/end of water year
+startDate_meas <- DailyStream$Date[1]
+if((month(startDate_meas) >= 10) & (day(startDate_meas) > 1)){
+  startDate_meas <- as.Date(paste(year(startDate_meas)+1, 10, 1, sep='-'))
+} else{
+  startDate_meas <- as.Date(paste(year(startDate_meas), 10, 1, sep='-'))
+}
+
+endDate_meas <- DailyStream$Date[nrow(DailyStream)]
+if(month(endDate_meas) >= 10){
+  endDate_meas <- as.Date(paste(year(endDate_meas), 9, 30, sep='-'))
+} else{
+  endDate_meas <- as.Date(paste(year(endDate_meas)-1, 9, 30, sep='-'))
+}
+
+# Select only complete water years in daily dataframe
+meas_flow_daily <- meas_flow_daily[meas_flow_daily$Date >= startDate_meas & meas_flow_daily$Date <= endDate_meas, ]
+
+# Add date information to daily dataframe
+meas_flow_daily$water_year <- sapply(meas_flow_daily$Date, get_water_year)
+meas_flow_daily$year <- year(meas_flow_daily$Date); meas_flow_daily$day <- yday(meas_flow_daily$Date)
+meas_flow_daily <- meas_flow_daily[meas_flow_daily$day != 366, ]
+
+# Add water day
+meas_flow_daily <- meas_flow_daily %>% group_by(water_year) %>%
+  mutate(water_day = (as.integer(difftime(Date,ymd(paste0(water_year - 1 ,'-09-30')), units = "days"))))
+
+# Add date information to monthly dataframe
+meas_flow_mon$Month <- month(as.Date(paste(meas_flow_mon$YrMon, "-01", sep=""), format="%Y-%m-%d"))
+meas_flow_mon$Year <- year(as.Date(paste(meas_flow_mon$YrMon, "-01", sep=""), format="%Y-%m-%d"))
+
+
+
+#######################################################################
+### EGRET plots ###
+
+# Aggregate in EGRET package format for plotting
+eList <- as.egret(INFO, DailyStream)
+
+# Adjust window in EGRET formatting based on available years of data
+half_window <- (min(endY, year(endDate_meas)) - max(year(startDate_meas), startY)) / 2
 eList <- setPA(eList, window = half_window)
 
 # plot summary statistics 
-jpeg(file=paste0(outLocationPath, "/", "Summary_Statistics.jpg"), width=1000, height=600); par(mfrow = c(2, 4), oma = c(0, 0, 4, 0))
+jpeg(file=paste0(outLocationPathHist, "/", "Summary_Statistics.jpg"), width=1000, height=600); par(mfrow = c(2, 4), oma = c(0, 0, 4, 0))
 for(i in 1:8){
-  plotFlowSingle(eList, istat=i, qUnit=1, printStaName=FALSE)
+  plotFlowSingle(eList, istat=i, qUnit=1, printStaName=FALSE, lwd=2)
 }
 title(main=paste("Summary Statistics for", SiteID), outer=TRUE, cex.main = 1.5)
 dev.off()
 
 # changes in variability - adjust window
-jpeg(file=paste0(outLocationPath, "/", "Variability_Change.jpg"), width=800, height=300); par(mfrow = c(1, 3), oma = c(0, 0, 4, 0))
-plotSDLogQ(eList, window=4, printStaName=FALSE)
+jpeg(file=paste0(outLocationPathHist, "/", "Variability_Change.jpg"), width=800, height=300); par(mfrow = c(1, 3), oma = c(0, 0, 4, 0))
+plotSDLogQ(eList, window=half_window, printStaName=FALSE)
 eList <- setPA(eList, paStart = 6, paLong = 3); plotSDLogQ(eList, window=4, printStaName=FALSE)
 eList <- setPA(eList, paStart = 12, paLong = 3); plotSDLogQ(eList, window=4, printStaName=FALSE)
 title(main=paste("Variability for", SiteID), outer=TRUE, cex.main = 1.5)
@@ -62,9 +112,7 @@ plotQTimeDaily(eList, qLower=100)
 ### Plots of historical measured streamflow - general ###
 
 ### Heatmap - monthly 
-meas_flow_mon$Month <- month(as.Date(paste(meas_flow_mon$YrMon, "-01", sep=""), format="%Y-%m-%d"))
-meas_flow_mon$Year <- year(as.Date(paste(meas_flow_mon$YrMon, "-01", sep=""), format="%Y-%m-%d"))
-jpeg(file=paste0(outLocationPath, "/", "Historical_Monthly_Heatmap.jpg"), width=600, height=400)
+jpeg(file=paste0(outLocationPathHist, "/", "Historical_Monthly_Heatmap.jpg"), width=600, height=400)
 ggplot(meas_flow_mon, aes(factor(Month), Year, fill = MeasMM)) + geom_tile() +
   scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu")) +
   labs(title = "Measured monthly streamflow", x='Month', fill = "Streamflow [mm]") +
@@ -77,13 +125,11 @@ dev.off()
 
 
 ### Heatmap - daily
-meas_flow_daily$year <- year(meas_flow_daily$Date); meas_flow_daily$day <- yday(meas_flow_daily$Date)
-meas_flow_daily <- meas_flow_daily[meas_flow_daily$day != 366, ]
 meas_flow_daily$day <- factor(meas_flow_daily$day, levels = unique(meas_flow_daily$day))
-jpeg(file=paste0(outLocationPath, "/", "Historical_Daily_Heatmap.jpg"), width=600, height=400)
+jpeg(file=paste0(outLocationPathHist, "/", "Historical_Daily_Heatmap.jpg"), width=600, height=400)
 ggplot(meas_flow_daily, aes(day, year, fill = as.numeric(MeasMM))) + geom_tile() +
-  scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu"), trans='log', breaks=c(min(hist_flow_daily_df$Meas), 0.01, 0.1, 10, 100, max(hist_flow_daily_df$Meas)), 
-                       labels=c(sprintf('%.3f',  min(hist_flow_daily_df$Meas)),'.01','0.1','10', '100', sprintf('%.0f',  max(hist_flow_daily_df$Meas)))) +
+  scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu"), trans='log', breaks=c(min(meas_flow_daily$MeasMM), 0.01, 0.1, 10, 100, max(meas_flow_daily$MeasMM)), 
+                       labels=c(sprintf('%.3f',  min(meas_flow_daily$MeasMM)),'.01','0.1','10', '100', sprintf('%.0f',  max(meas_flow_daily$MeasMM)))) +
   labs(title = "Measured daily streamflow", x='Month', fill = "Streamflow [mm]") +
   scale_x_discrete(breaks=c("1", "32", "60", "91", "121", "152", "182", "213", "244", "274", "305", "335"), 
                    labels = c("1" = "January", "32" = "February", "60" = "March", "91" = "April", "121" = "May", "152" = "June", 
@@ -100,8 +146,8 @@ z_matrix <- as.matrix(z_matrix %>% select(-'year'))
 fig <- plot_ly() %>% layout(title = paste(SiteID, "3D Hydrograph"),
                             scene = list(yaxis = list(title = 'Year'), xaxis = list(title = 'Day of year'), zaxis = list(title = 'Streamflow [mm]')), 
                             coloraxis = list(colorbar = list(title = 'Streamflow [mm]')))
-for(year in unique(hist_flow_daily_df$year)) {
-  year_data <- hist_flow_daily_df[hist_flow_daily_df$year == year, ]
+for(year in unique(meas_flow_daily$year)) {
+  year_data <- meas_flow_daily[meas_flow_daily$year == year, ]
   fig <- fig %>% add_trace(x = year_data$day, y = rep(year, nrow(year_data)), z = year_data$Meas, color = year_data$Meas, #colors = c('YlGnBu'), 
                            type = 'scatter3d', mode = 'lines', line = list(width = 4), 
                            name = as.character(year), showlegend=FALSE)
@@ -116,4 +162,135 @@ fig
 #######################################################################
 ### Plots of historical measured streamflow - analysis of metrics ###
 
-meas_flow_ann <- meas_flow_daily %>% group_by(year) %>% summarize(MeasMM = sum(MeasMM))
+# General Mann-Kendall test on daily streamflow ? should probably be seasonal
+meas_mk <- SeasonalMannKendall(ts(meas_flow_daily$MeasMM, start=c(year(startDate_meas), 1), frequency=365))
+if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
+}else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+jpeg(file=paste0(outLocationPathHist, "/", "Daily_Flow_Trends.jpg"), width=600, height=400)
+plot_meas <- ggplot(meas_flow_daily, aes(x = Date, y = MeasMM)) + geom_line(aes(color = 'Measured'), linewidth=1) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
+  labs(x = "Water Year", y = "Daily Streamflow (mm)", title = "Daily Measured Streamflow", color='') +
+  nps_theme() + theme(legend.position = 'bottom') + scale_color_manual(values = c("Measured" = "black", "Trend" = "red")) +
+  annotate("text", x = max(meas_flow_daily$Date), y = max(meas_flow_daily$MeasMM), label = label, color = "black", hjust = 1, vjust = 1) + 
+  scale_y_log10()
+plot_meas
+dev.off()
+
+# Seasonal Mann-Kendall test on monthly streamflow
+meas_mk <- SeasonalMannKendall(ts(meas_flow_mon$MeasMM, start=c(year(startDate_meas), 1), frequency=12))
+if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
+}else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+jpeg(file=paste0(outLocationPathHist, "/", "Monthly_Flow_Trends.jpg"), width=600, height=400)
+plot_meas <- ggplot(meas_flow_mon, aes(x = as.yearmon(YrMon), y = MeasMM)) + geom_line(aes(color = 'Measured'), linewidth=1) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
+  labs(x = "Water Year", y = "Monthly Streamflow (mm)", title = "Monthly Measured Streamflow", color='') +
+  nps_theme() + theme(legend.position = 'bottom') +
+  scale_color_manual(values = c("Measured" = "black", "Trend" = "red")) +
+  annotate("text", x = max(as.yearmon(meas_flow_mon$YrMon)), y = max(meas_flow_mon$MeasMM), label = label, color = "black", hjust = 1, vjust = 1)
+plot_meas
+dev.off()
+
+
+# Annual streamflow volume
+meas_flow_ann <- meas_flow_daily %>% group_by(water_year) %>% summarize(MeasMM = sum(MeasMM))
+meas_mk <- MannKendall(meas_flow_ann$MeasMM)
+if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
+}else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+jpeg(file=paste0(outLocationPathHist, "/", "Annual_Volume_Trends.jpg"), width=600, height=400)
+plot_meas <- ggplot(meas_flow_ann, aes(x = water_year, y = MeasMM)) + geom_line(aes(color = 'Measured'), linewidth=1) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
+  labs(x = "Water Year", y = "Annual Streamflow (mm)", title = "Annual Measured Streamflow", color='') +
+  nps_theme() + theme(legend.position = 'bottom') +
+  scale_color_manual(values = c("Measured" = "black", "Trend" = "red")) +
+  annotate("text", x = max(meas_flow_ann$water_year), y = max(meas_flow_ann$MeasMM), label = label, color = "black", hjust = 1, vjust = 1)
+plot_meas
+dev.off()
+
+
+# High flows (above 95%)
+high_flow_q = 0.95
+high_flow_mm = quantile(meas_flow_daily$MeasMM, 0.95)
+
+hist_high <- as.data.frame(meas_flow_daily %>% mutate(high_flow = ifelse(MeasMM >= high_flow_mm, 1, 0)) %>%
+                                 group_by(water_year) %>% dplyr::summarize(days = sum(high_flow)))
+meas_mk <- MannKendall(hist_high$days)
+if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
+}else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+#jpeg(file=paste0(outLocationPathHist, "/", "Annual_High_Flow_Trends.jpg"), width=600, height=400)
+plot_meas <- ggplot(hist_high, aes(x = water_year, y = days)) + geom_line(aes(color = 'Measured'), linewidth=1) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
+  labs(x = "Water Year", y = "Number of days per year", title = "Days Above Historical 95th Percentile", color='') +
+  nps_theme() + theme(legend.position = 'bottom') +
+  scale_color_manual(values = c("Measured" = "black", "Trend" = "red")) +
+  annotate("text", x = max(hist_high$water_year), y = max(hist_high$days), label = label, color = "black", hjust = 1, vjust = 1)
+plot_meas
+dev.off()
+
+
+# Low flows (below 5%)
+low_flow_q = 0.05
+low_flow_mm = quantile(meas_flow_daily$MeasMM, 0.05)
+
+hist_low <- as.data.frame(meas_flow_daily %>% mutate(low_flow = ifelse(MeasMM <= low_flow_mm, 1, 0)) %>%
+                             group_by(water_year) %>% dplyr::summarize(days = sum(low_flow)))
+meas_mk <- MannKendall(hist_low$days)
+if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
+}else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+#jpeg(file=paste0(outLocationPathHist, "/", "Annual_Low_Flow_Trends.jpg"), width=600, height=400)
+plot_meas <- ggplot(hist_low, aes(x = water_year, y = days)) + geom_line(aes(color = 'Measured'), linewidth=1) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
+  labs(x = "Water Year", y = "Number of days per year", title = "Days Below Historical 5th Percentile", color='') +
+  nps_theme() + theme(legend.position = 'bottom') +
+  scale_color_manual(values = c("Measured" = "black", "Trend" = "red")) +
+  annotate("text", x = max(hist_low$water_year), y = max(hist_low$days), label = label, color = "black", hjust = 1, vjust = 1)
+plot_meas
+dev.off()
+
+
+# 50% flow date
+hist_ct <- as.data.frame(meas_flow_daily %>% mutate(tq = MeasMM*water_day) %>%
+                          group_by(water_year) %>% dplyr::summarize(ct = sum(tq)/sum(MeasMM)))
+meas_mk <- MannKendall(hist_ct$ct)
+if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
+}else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+jpeg(file=paste0(outLocationPathHist, "/", "Annual_50th_Flow_Trends.jpg"), width=600, height=400)
+plot_meas <- ggplot(hist_ct, aes(x = water_year, y = ct)) + geom_line(aes(color = 'Measured'), linewidth=1) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
+  labs(x = "Water Year", y = "Days after Oct 1", title = "Historical 50% Flow Date", color='') +
+  nps_theme() + theme(legend.position = 'bottom') +
+  scale_color_manual(values = c("Measured" = "black", "Trend" = "red")) +
+  annotate("text", x = max(hist_ct$water_year), y = max(hist_ct$ct), label = label, color = "black", hjust = 1, vjust = 1)
+plot_meas
+dev.off()
+
+
+# Q7 min
+# does DailyStream need to be filtered to fixed water years?
+hist_q7 <- DailyStream %>% group_by(waterYear) %>% dplyr::summarize(min_q7 = min(Q7, na.rm=TRUE), max_q7 = max(Q7, na.rm=TRUE), avg_q7 = mean(Q7, na.rm=TRUE))
+meas_mk <- MannKendall(hist_q7$min_q7)
+if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
+}else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+jpeg(file=paste0(outLocationPathHist, "/", "Annual_Q7Min_Trends.jpg"), width=600, height=400)
+plot_meas <- ggplot(hist_q7, aes(x = waterYear, y = min_q7)) + geom_line(aes(color = 'Measured'), linewidth=1) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
+  labs(x = "Water Year", y = "Streamflow [mm]", title = "Minimum 7 Day Flow (Q7 Min)", color='') +
+  nps_theme() + theme(legend.position = 'bottom') +
+  scale_color_manual(values = c("Measured" = "black", "Trend" = "red")) +
+  annotate("text", x = max(hist_q7$waterYear), y = max(hist_q7$min_q7), label = label, color = "black", hjust = 1, vjust = 1)
+plot_meas
+dev.off()
+
+# Q7 max
+meas_mk <- MannKendall(hist_q7$max_q7)
+if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
+}else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+jpeg(file=paste0(outLocationPathHist, "/", "Annual_Q7Max_Trends.jpg"), width=600, height=400)
+plot_meas <- ggplot(hist_q7, aes(x = waterYear, y = max_q7)) + geom_line(aes(color = 'Measured'), linewidth=1) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
+  labs(x = "Water Year", y = "Streamflow [mm]", title = "Maximum 7 Day Flow (Q7 Max)", color='') +
+  nps_theme() + theme(legend.position = 'bottom') +
+  scale_color_manual(values = c("Measured" = "black", "Trend" = "red")) +
+  annotate("text", x = max(hist_q7$waterYear), y = max(hist_q7$max_q7), label = label, color = "black", hjust = 1, vjust = 1)
+plot_meas
+dev.off()
+

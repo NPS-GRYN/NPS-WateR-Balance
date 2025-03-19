@@ -74,11 +74,11 @@ get_gage_data <- function(GageSiteID, incompleteMonths, dataPath){
   
   # Extract square mileage of the watershed from the EGRET package
   obj = readNWISInfo(siteNumber = GageSiteID, parameterCd = "00060", interactive = FALSE)
-  sqmi = obj$drain_area_va
+  sqmi <- obj$drain_area_va
   
   # Aggregate gage discharge data daily and convert from cfs to mm 
   meas_flow_daily <- data.frame(Date = DailyStream$Date, MeasMM = DailyStream$CFS*28316847*86400/(2590000000000 * sqmi))
-  meas_flow_daily <- xts(meas_flow_daily$MeasMM, order.by = ymd(meas_flow_daily$Date))
+  meas_flow_daily_xts <- xts(meas_flow_daily$MeasMM, order.by = ymd(meas_flow_daily$Date))
   
   # Aggregate gage discharge data monthly
   meas_flow_daily$YrMon<- format(as.Date(meas_flow_daily$Date, format="%Y-%m-%d"),"%Y-%m")
@@ -100,7 +100,7 @@ get_gage_data <- function(GageSiteID, incompleteMonths, dataPath){
     colnames(meas_flow_mon)<- c("YrMon", "MeasMM")
   }
   
-  return(list(meas_flow_daily=meas_flow_daily, meas_flow_mon=meas_flow_mon, DailyStream=DailyStream))
+  return(list(meas_flow_daily=meas_flow_daily_xts, meas_flow_mon=meas_flow_mon, DailyStream=DailyStream))
 }
 
 
@@ -341,7 +341,7 @@ get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileNa
 
 
 # Function to calculate pseudo R-squared
-calculate_pseudo_r2 <- function(model, newdata, tau) {
+calculate_pseudo_r2 <- function(model, newdata, tau){
   preds <- predict(model, newdata = newdata)
   tau_preds <- preds[, which(model$tau == tau)]
   residuals <- newdata$Meas - tau_preds
@@ -349,6 +349,17 @@ calculate_pseudo_r2 <- function(model, newdata, tau) {
   tss <- sum((newdata$Meas - mean(newdata$Meas))^2)
   r2 <- 1 - (rss / tss)
   return(r2)
+}
+
+
+
+# Function to return water year
+get_water_year <- function(date){
+  if(month(date) < 10){
+    return(year(date))
+  } else {
+    return(year(date) + 1)
+  }
 }
 
   
