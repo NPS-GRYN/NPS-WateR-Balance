@@ -19,7 +19,7 @@
 get_coords <- function(SiteID_FileName, GageSiteID){
   if(!file.exists(here('Data', SiteID_FileName, 'downloaded_shapefile', 'Layers', 'globalwatershed.shp'))){
     # get lat/lon data for watershed
-    INFO <- readNWISInfo(siteNumber=GageSiteID, parameterCd = "")
+    INFO <- readNWISInfo(siteNumber=GageSiteID, parameterCd = "", interactive=FALSE)
     
     # produce workspace ID for given watershed
     get_workspace = GET(paste0('https://streamstats.usgs.gov/streamstatsservices/watershed.geojson?rcode=',tail(strsplit(INFO$station_nm," ")[[1]],n=1),'&xlocation=',INFO$dec_long_va,"&ylocation=",INFO$dec_lat_va,"&crs=4326&includeparameters=true&includeflowtypes=false&includefeatures=true&simplify=true"))
@@ -59,11 +59,18 @@ get_gage_data <- function(GageSiteID, incompleteMonths, dataPath){
   if(!file.exists(file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, startY+1,endY, sep = "_"), ".csv")))){
     DailyStream <- EGRET::readNWISDaily(siteNumber = GageSiteID, parameterCd = "00060", 
                                         startDate = paste(startY, startM, startD, sep='-'), endDate = paste(endY, endM, endD, sep='-')) |>
-      dplyr::filter(grepl('A', Qualifier)) |> #this filters for any Qualifier that has an A. It will return A and A:E
-      dplyr::mutate(CFS = Q*35.314666212661) #converts Q to flow cfs
+      dplyr::filter(grepl('A', Qualifier)) |> # this filters for any Qualifier that has an A (A and A:E)
+      dplyr::mutate(CFS = Q*35.314666212661) # convert Q from m3/s to cfs
     write.csv(DailyStream, file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, startY+1,endY, sep = "_"), ".csv")))
   }else{DailyStream<- read.csv(file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, startY+1,endY, sep = "_"), ".csv")))}
   DailyStream$Date <- as.Date(DailyStream$Date)
+  
+  # Remove leap days from streamflow data according to user input
+  # check this code
+  if(!fillLeapDays){
+    DailyStream$Date<- ymd(DailyStream$Date)
+    DailyStream <- DailyStream[!(format(DailyStream$Date,"%m") == "02" & format(DailyStream$Date, "%d") == "29"), , drop = FALSE]
+  }
   
   # Extract square mileage of the watershed from the EGRET package
   obj = readNWISInfo(siteNumber = GageSiteID, parameterCd = "00060", interactive = FALSE)
@@ -71,7 +78,7 @@ get_gage_data <- function(GageSiteID, incompleteMonths, dataPath){
   
   # Aggregate gage discharge data daily and convert from cfs to mm 
   meas_flow_daily <- data.frame(Date = DailyStream$Date, MeasMM = DailyStream$CFS*28316847*86400/(2590000000000 * sqmi))
-  meas_flow_daily_xts <- xts(meas_flow_daily$MeasMM, order.by = ymd(meas_flow_daily$Date))
+  meas_flow_daily <- xts(meas_flow_daily$MeasMM, order.by = ymd(meas_flow_daily$Date))
   
   # Aggregate gage discharge data monthly
   meas_flow_daily$YrMon<- format(as.Date(meas_flow_daily$Date, format="%Y-%m-%d"),"%Y-%m")
@@ -93,14 +100,7 @@ get_gage_data <- function(GageSiteID, incompleteMonths, dataPath){
     colnames(meas_flow_mon)<- c("YrMon", "MeasMM")
   }
   
-  # Remove leap days from streamflow data according to user input
-  # check this code
-  if(!fillLeapDays){
-    DailyStream$Date<- ymd(DailyStream$Date)
-    DailyStream <- DailyStream[!(format(DailyStream$Date,"%m") == "02" & format(DailyStream$Date, "%d") == "29"), , drop = FALSE]
-  }
-  
-  return(list(meas_flow_daily_xts=meas_flow_daily_xts, meas_flow_mon=meas_flow_mon))
+  return(list(meas_flow_daily=meas_flow_daily, meas_flow_mon=meas_flow_mon, DailyStream=DailyStream))
 }
 
 

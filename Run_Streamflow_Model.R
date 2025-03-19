@@ -20,7 +20,7 @@
 
 #######################################################################
 ### Load libraries ###
-library(sf); library(raster); library(ggplot2); library(dplyr); library(xts); library(geosphere); library(quantreg)
+library(sf); library(raster); library(ggplot2); library(dplyr); library(xts); library(geosphere); library(quantreg); library(orca)
 library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse); library(RColorBrewer)
 library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
 library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table); library(plotly)
@@ -141,7 +141,7 @@ startDate<- ymd(paste(startY, startM, startD)); endDate<-  ymd(paste(endY, endM,
 ### Scrape and clean USGS stream gage data ###
 
 gage_data <- get_gage_data(GageSiteID, incompleteMonths, dataPath)
-meas_flow_daily_xts <- gage_data$meas_flow_daily_xts; meas_flow_mon <- gage_data$meas_flow_mon
+meas_flow_daily <- gage_data$meas_flow_daily; meas_flow_mon <- gage_data$meas_flow_mon
 
 
 #######################################################################
@@ -196,7 +196,7 @@ if(optimization){
   # Use genetic algorithm (GA) for optimization
   optMonth_init <- ga(type = "real-valued", fitness = function(x) 
     WB_Optim(c(gw_add=x[1], vfm=x[2], jrange=x[3], hock=x[4], hockros=x[5], dro=x[6], mondro=x[7], aspect=x[8], slope=x[9], shade.coeff=x[10], SWC.Max=x[11], jtemp=x[12]), 
-            meas_flow_daily_xts = meas_flow_daily_xts, cutoffYear = cutoffYear, q0=q0, s0=s0, v0=v0,qa=qa, qb=qb, sa=sa, sb=sb,va=va, vb=vb, Soil.Init = Soil.Init, 
+            meas_flow_daily = meas_flow_daily, cutoffYear = cutoffYear, q0=q0, s0=s0, v0=v0,qa=qa, qb=qb, sa=sa, sb=sb,va=va, vb=vb, Soil.Init = Soil.Init, 
             Snowpack.Init = Snowpack.Init, T.Base = T.Base, PETMethod= PETMethod, DailyClimData = DailyClimData, lat=lat,lon=lon, meas_flow_mon = meas_flow_mon), 
     lower=WB_lower, upper=WB_upper)
   elpTimeM <- Sys.time() - strtTimeM
@@ -270,7 +270,7 @@ if(optimization){
   
   ### use GA (genetic algorithm) to explore parameter space and estimate IHACRES flow coefficients ###
   IHcoeffs <- tibble()
-  optDaily_init <- ga(type = "real-valued", fitness = function(x) IHACRESFlow(c(qa=x[1], qb=x[2], sa=x[3], sb=x[4], va=x[5]), q0=q0, s0=s0, v0=v0, DailyWB=DailyWB, meas_flow_daily_xts= meas_flow_daily_xts, cutoffYear = cutoffYear), lower =IHACRES_lower, upper = IHACRES_upper)
+  optDaily_init <- ga(type = "real-valued", fitness = function(x) IHACRESFlow(c(qa=x[1], qb=x[2], sa=x[3], sb=x[4], va=x[5]), q0=q0, s0=s0, v0=v0, DailyWB=DailyWB, meas_flow_daily= meas_flow_daily, cutoffYear = cutoffYear), lower =IHACRES_lower, upper = IHACRES_upper)
   if(flow_components==3){
     qa <- optDaily_init@solution[1]; qb <- optDaily_init@solution[2]; sa <- optDaily_init@solution[3]; sb <- optDaily_init@solution[4]; va <- optDaily_init@solution[5]; vb<-calc_vb(qa, qb, sa, sa, va)
   } else if(flow_components==2){
@@ -304,7 +304,7 @@ if(optimization){
   optDaily <- optim(par = IHACRES_parms, fn = IHACRESFlow, method = "L-BFGS-B",
                     lower = IHACRES_lower, upper = IHACRES_upper, hessian=TRUE, control = list(fnscale = -1, factr = '1e-2'),
                     #these parameters are carried through to IHACRESFlow
-                    q0=q0, s0=s0, v0=v0, DailyWB=DailyWB, meas_flow_daily_xts=meas_flow_daily_xts, cutoffYear=cutoffYear)
+                    q0=q0, s0=s0, v0=v0, DailyWB=DailyWB, meas_flow_daily=meas_flow_daily, cutoffYear=cutoffYear)
   
   elpTimeD <- Sys.time() - strtTimeD
   
@@ -360,7 +360,7 @@ if(!optimization){
   
   # store results
   IHcoeffs <- tibble()
-  nseD <-  IHACRESFlow(c(qa=qa, qb=qb, sa=sa, sb=sb, va=va), q0, s0, v0, DailyWB, meas_flow_daily_xts, cutoffYear)
+  nseD <-  IHACRESFlow(c(qa=qa, qb=qb, sa=sa, sb=sb, va=va), q0, s0, v0, DailyWB, meas_flow_daily, cutoffYear)
   results<- data.frame(results, IHcoeffs, elpTimeD=NA)
 }
 
@@ -379,7 +379,7 @@ saveRDS(results, file = paste0(outLocationPath, "/results.rds"))
 ### Create dataframes for aggregations ###
 
 # Daily aggregation with measured and modeled streamflow
-hist_flow_daily <- merge(xts(with(DailyDrain, cbind(adj_runoff, Quick, Slow, Very_Slow, total)), order.by = as.Date(DailyDrain$date)), meas_flow_daily_xts)
+hist_flow_daily <- merge(xts(with(DailyDrain, cbind(adj_runoff, Quick, Slow, Very_Slow, total)), order.by = as.Date(DailyDrain$date)), meas_flow_daily)
 hist_flow_daily <- hist_flow_daily[complete.cases(hist_flow_daily),]
 colnames(hist_flow_daily) <- c("adj_runoff", "quick", "slow", "very slow", "Mod", "Meas")
 
@@ -446,6 +446,7 @@ if(make_plots){
 }
 
 # time series plot of historical annual streamflow trends (measured and modeled)
+# trend analysis assumes p value of < 0.05 is significant
 if(make_plots){
   meas_mk <- MannKendall(hist_flow_ann$Meas)
   if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
@@ -453,7 +454,7 @@ if(make_plots){
   
   plot_meas <- ggplot(hist_flow_ann, aes(x = index(Meas), y = Meas)) + geom_line(aes(color = 'Measured'), linewidth=1) +
     geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
-    labs(x = "Date", y = "Annual Sum Streamflow (mm)", title = "Annual Measured Streamflow", color='') +
+    labs(x = "Date", y = "Annual Streamflow (mm)", title = "Annual Measured Streamflow", color='') +
     nps_theme() + theme(legend.position = 'bottom') +
     scale_color_manual(values = c("Measured" = "black", "Trend" = "red")) +
     annotate("text", x = max(index(hist_flow_ann$Meas)), y = max(hist_flow_ann$Meas), label = label, color = "black", hjust = 1, vjust = 1)
@@ -465,7 +466,7 @@ if(make_plots){
 
   plot_mod <- ggplot(hist_flow_ann, aes(x = index(Mod), y = Mod)) + geom_line(aes(color = 'Modeled'), linewidth=1) +
     geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
-    labs(x = "Date", y = "Annual Sum Streamflow (mm)", title = "Annual Modeled Streamflow", color='') +
+    labs(x = "Date", y = "Annual Streamflow (mm)", title = "Annual Modeled Streamflow", color='') +
     nps_theme() + theme(legend.position = 'bottom') +
     scale_color_manual(values = c("Modeled" = "black", "Trend" = "red")) +
     annotate("text", x = max(index(hist_flow_ann$Mod)), y = max(hist_flow_ann$Mod), label = label, color = "black", hjust = 1, vjust = 1)
@@ -483,93 +484,6 @@ if(make_plots){
   print(xts::addLegend("topleft", legend.names = c("Modeled", "Measured"), lty=1, col= c("red", "black")))
   dev.off()
 }
-
-# Heatmap - monthly 
-MeasMod$Month <- month(as.Date(paste(MeasMod$YrMon, "-01", sep=""), format="%Y-%m-%d"))
-MeasMod$Year <- year(as.Date(paste(MeasMod$YrMon, "-01", sep=""), format="%Y-%m-%d"))
-jpeg(file=paste0(outLocationPath, "/", "Historical_Monthly_Heatmap.jpg"), width=600, height=400)
-ggplot(MeasMod, aes(factor(Month), Year, fill = Meas)) + geom_tile() +
-  scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu")) +
-  labs(title = "Measured monthly streamflow", x='Month', fill = "Streamflow [mm]") +
-  scale_x_discrete(labels = c("1" = "January", "2" = "February", "3" = "March", 
-                              "4" = "April", "5" = "May", "6" = "June", 
-                              "7" = "July", "8" = "August", "9" = "September", 
-                              "10" = "October", "11" = "November", "12" = "December")) +
-  nps_theme() + theme(axis.text.x = element_text(angle = 90))
-dev.off()
-
-
-# Heatmap - daily
-hist_flow_daily_df <- data.frame(date = index(hist_flow_daily), coredata(hist_flow_daily))
-hist_flow_daily_df$year <- year(hist_flow_daily_df$date); hist_flow_daily_df$day <- yday(index(hist_flow_daily))
-hist_flow_daily_df <- hist_flow_daily_df[hist_flow_daily_df$day != 366, ]
-hist_flow_daily_df$day <- factor(hist_flow_daily_df$day, levels = unique(hist_flow_daily_df$day))
-jpeg(file=paste0(outLocationPath, "/", "Historical_Daily_Heatmap.jpg"), width=600, height=400)
-ggplot(hist_flow_daily_df, aes(day, year, fill = as.numeric(Meas))) + geom_tile() +
-  scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu"), trans='log', breaks=c(min(hist_flow_daily_df$Meas), 0.01, 0.1, 10, 100, max(hist_flow_daily_df$Meas)), 
-                       labels=c(sprintf('%.3f',  min(hist_flow_daily_df$Meas)),'.01','0.1','10', '100', sprintf('%.0f',  max(hist_flow_daily_df$Meas)))) +
-  labs(title = "Measured daily streamflow", x='Month', fill = "Streamflow [mm]") +
-  scale_x_discrete(breaks=c("1", "32", "60", "91", "121", "152", "182", "213", "244", "274", "305", "335"), 
-                   labels = c("1" = "January", "32" = "February", "60" = "March", "91" = "April", "121" = "May", "152" = "June", 
-                              "182" = "July", "213" = "August", "244" = "September", "274" = "October", "305" = "November", "335" = "December")) +
-  theme(axis.text.x = element_text(angle = 90))
-dev.off()
-hist_flow_daily_df$day <- as.numeric(hist_flow_daily_df$day)
-
-
-# 3D raster hydrograph
-
-# try with plotly
-z_matrix <- reshape((hist_flow_daily_df %>% select(c('day','year','Meas')) %>% arrange(as.numeric(day))), idvar = "year", timevar = "day", direction = "wide")
-rownames(z_matrix) <- z_matrix$year
-colnames(z_matrix) <- sub("Meas.", "", colnames(z_matrix))
-z_matrix <- as.matrix(z_matrix %>% select(-'year'))
-fig <- plot_ly(z = z_matrix, x=colnames(z_matrix), y=rownames(z_matrix)) %>% add_surface() %>% 
-  layout(title = paste(SiteID, "3D Hydrograph"),
-         scene = list(xaxis = list(title = 'Year'), yaxis = list(title = 'Day of year'), zaxis = list(title = 'Streamflow [mm]')), 
-         legend = list(title = list(text = 'Streamflow [mm]')))
-fig
-
-# [hist_flow_daily_df$year == 2020, ]
-fig <- plot_ly(data=hist_flow_daily_df, z=~Meas, x=~year, y=~day, type='scatter3d', mode='lines', color=~Meas) %>% 
-  layout(title = paste(SiteID, "3D Hydrograph"),
-         scene = list(xaxis = list(title = 'Year'), yaxis = list(title = 'Day of year'), zaxis = list(title = 'Streamflow [mm]')), 
-         legend = list(title = list(text = 'Streamflow [mm]')))
-fig
-
-
-
-# try w loop
-fig <- plot_ly() %>% layout(title = paste(SiteID, "3D Hydrograph"),
-                            scene = list(yaxis = list(title = 'Year'), xaxis = list(title = 'Day of year'), zaxis = list(title = 'Streamflow [mm]')), 
-                            coloraxis = list(colorbar = list(text = 'Streamflow [mm]')))
-for(year in unique(hist_flow_daily_df$year)) {
-  year_data <- hist_flow_daily_df[hist_flow_daily_df$year == year, ]
-  
-  # Create 3D scatter plot for each year
-  fig <- fig %>% add_trace(x = year_data$day, y = rep(year, nrow(year_data)), z = year_data$Meas, color = year_data$Meas, #colors = c('YlGnBu'), 
-                           type = 'scatter3d', mode = 'lines', line = list(width = 4), 
-                           name = as.character(year), showlegend=FALSE)
-  # simulate fill
-  # fig <- fig %>% add_trace(x = year_data$day, y = rep(year, nrow(year_data)), z = rep(min(year_data$Meas), nrow(year_data)), 
-  #   fill = 'tozeroy', color = year_data$Meas, colors = 'YlGnBu', type = 'scatter3d', mode = 'lines',
-  #   fill= 'tonexty', fillcolor = 'rgba(0, 100, 255, 0.3)', line = list(width = 0), showlegend = FALSE)
-}
-fig
-
-
-
-
-
-# try with rgl
-z_matrix <- reshape((hist_flow_daily_df %>% select(c('mon_day','year','Meas'))), idvar = "mon_day", timevar = "year", direction = "wide")
-rownames(z_matrix) <- z_matrix$mon_day
-colnames(z_matrix) <- sub("Meas.", "", colnames(z_matrix))
-z_matrix <- as.matrix(z_matrix %>% select(-'mon_day'))
-open3d()
-surface3d(x=unique(as.numeric(hist_flow_daily_df$mon_day)), y=unique(as.numeric(hist_flow_daily_df$year)), z=as.matrix(z_matrix))
-rgl.postscript(paste0(outLocationPath, "/", '3d_hydrograph.pdf'), fmt = "pdf")
-
 
 
 
