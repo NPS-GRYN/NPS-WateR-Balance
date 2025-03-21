@@ -103,8 +103,8 @@ p_slope = 1; p_bias = 0
 # Set path variables
 if(!dir.exists(here('Data', SiteID_FileName))) {dir.create(here('Data', SiteID_FileName))}; dataPath <- here('Data', SiteID_FileName)
 if(!dir.exists(here('Output', SiteID_FileName))) {dir.create(here('Output', SiteID_FileName))}
-if(!dir.exists(here('Output', SiteID_FileName, 'WB'))) {dir.create(here('Output', SiteID_FileName, 'WB'))}
-if(!dir.exists(here('Output', SiteID_FileName, 'WB', FolderName))) {dir.create(here('Output', SiteID_FileName,'WB', FolderName))}; outLocationPath = here('Output', SiteID_FileName, 'WB', FolderName)
+if(!dir.exists(here('Output', SiteID_FileName, 'WaterBalance'))) {dir.create(here('Output', SiteID_FileName, 'WaterBalance'))}
+if(!dir.exists(here('Output', SiteID_FileName, 'WaterBalance', FolderName))) {dir.create(here('Output', SiteID_FileName,'WaterBalance', FolderName))}; outLocationPath = here('Output', SiteID_FileName, 'WaterBalance', FolderName)
 
 # Pull watershed shapefile from StreamStats database
 # figure out format / how to assign variables

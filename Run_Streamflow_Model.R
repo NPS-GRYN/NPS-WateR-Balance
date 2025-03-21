@@ -26,7 +26,6 @@ library(climateR); library(EGRET); library(daymetr); library(here); library(ggre
 library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table); library(plotly)
 
 ### Source in function files ###
-path <- here() 
 setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setwd(here())
 
 
@@ -107,8 +106,8 @@ p_slope = 1; p_bias = 0
 # Set path variables
 if(!dir.exists(here('Data', SiteID_FileName))) {dir.create(here('Data', SiteID_FileName))}; dataPath <- here('Data', SiteID_FileName)
 if(!dir.exists(here('Output', SiteID_FileName))) {dir.create(here('Output', SiteID_FileName))}
-if(!dir.exists(here('Output', SiteID_FileName, 'IHACRES'))) {dir.create(here('Output', SiteID_FileName, 'IHACRES'))}
-if(!dir.exists(here('Output', SiteID_FileName, 'IHACRES', FolderName))) {dir.create(here('Output', SiteID_FileName, 'IHACRES', FolderName))}; outLocationPath = here('Output', SiteID_FileName, 'IHACRES', FolderName)
+if(!dir.exists(here('Output', SiteID_FileName, 'Streamflow'))) {dir.create(here('Output', SiteID_FileName, 'Streamflow'))}
+if(!dir.exists(here('Output', SiteID_FileName, 'Streamflow', FolderName))) {dir.create(here('Output', SiteID_FileName, 'Streamflow', FolderName))}; outLocationPath = here('Output', SiteID_FileName, 'Streamflow', FolderName)
 
 # Pull watershed shapefile from StreamStats database
 # figure out format / how to assign variables
@@ -140,7 +139,7 @@ startDate<- ymd(paste(startY, startM, startD)); endDate<-  ymd(paste(endY, endM,
 #######################################################################
 ### Scrape and clean USGS stream gage data ###
 
-gage_data <- get_gage_data(GageSiteID, incompleteMonths, dataPath)
+gage_data <- get_gage_data(GageSiteID, incompleteMonths, fillLeapDays, dataPath)
 meas_flow_daily <- gage_data$meas_flow_daily; meas_flow_mon <- gage_data$meas_flow_mon
 
 

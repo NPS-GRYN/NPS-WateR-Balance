@@ -10,6 +10,11 @@
 # ---------------------------------------------------------------------
 
 
+# Create folders for data and output
+if(!dir.exists(here('Data'))) {dir.create(here('Data'))}
+if(!dir.exists(here('Output'))) {dir.create(here('Output'))}
+
+
 # Get latitude and longitude coordinates of watershed centroid using StreamStats database
 # Args:
 #   SiteID_FileName:
@@ -54,16 +59,20 @@ get_coords <- function(SiteID_FileName, GageSiteID){
 #   dataPath
 # Returns:
 #   xts object of daily streamflow measurements and dataframe of monthly streamflow measurements
-get_gage_data <- function(GageSiteID, incompleteMonths, dataPath){
+get_gage_data <- function(GageSiteID, incompleteMonths, fillLeapDays, dataPath){
   # Scrape data and save
-  if(!file.exists(file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, startY+1,endY, sep = "_"), ".csv")))){
-    DailyStream <- EGRET::readNWISDaily(siteNumber = GageSiteID, parameterCd = "00060", 
-                                        startDate = paste(startY, startM, startD, sep='-'), endDate = paste(endY, endM, endD, sep='-')) |>
+  if(!file.exists(file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, sep = "_"), ".csv")))){
+    DailyStream <- EGRET::readNWISDaily(siteNumber = GageSiteID, parameterCd = "00060") |>
       dplyr::filter(grepl('A', Qualifier)) |> # this filters for any Qualifier that has an A (A and A:E)
       dplyr::mutate(CFS = Q*35.314666212661) # convert Q from m3/s to cfs
-    write.csv(DailyStream, file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, startY+1,endY, sep = "_"), ".csv")))
-  }else{DailyStream<- read.csv(file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, startY+1,endY, sep = "_"), ".csv")))}
+    write.csv(DailyStream, file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, sep = "_"), ".csv")))
+  }else{DailyStream<- read.csv(file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, sep = "_"), ".csv")))}
   DailyStream$Date <- as.Date(DailyStream$Date)
+  
+  # Generate dataframe with complete dates, fill in missing data with NA
+  DailyStream <- left_join(data.frame(Date = seq(min(DailyStream$Date), max(DailyStream$Date), by = "day")), 
+                           DailyStream, by = "Date")
+  DailyStream$waterYear <- sapply(DailyStream$Date, get_water_year)
   
   # Remove leap days from streamflow data according to user input
   # check this code
