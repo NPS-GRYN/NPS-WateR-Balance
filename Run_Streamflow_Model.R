@@ -20,10 +20,7 @@
 
 #######################################################################
 ### Load libraries ###
-library(sf); library(raster); library(ggplot2); library(dplyr); library(xts); library(geosphere); library(quantreg); library(orca)
-library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse); library(RColorBrewer)
-library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
-library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table); library(plotly)
+library('here')
 
 ### Source in function files ###
 setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setwd(here())
@@ -38,6 +35,7 @@ NonZeroDrainInitCoeff = FALSE
 incompleteMonths = FALSE 
 GridMET = TRUE
 fillLeapDays = TRUE 
+historical_analysis = TRUE
 future_analysis = TRUE
 calcFutureWB = TRUE  # TRUE to re-run entire water balance model for future; FALSE to use pre-existing CONUS water balance projections from a Mike Tercek spreadsheet
 userSetJTemp = FALSE 
@@ -545,6 +543,14 @@ plot <- ggplot(hist_flow_daily, aes(Mod,Meas)) + geom_point() +   geom_abline(da
 plot
 dev.off()
 
+
+
+#######################################################################
+#######################################################################
+### HISTORICAL STREAMFLOW ANALYSIS ###
+if(historical_anlysis){
+  source('Historical_Analysis.R')
+}
 
 
 #######################################################################

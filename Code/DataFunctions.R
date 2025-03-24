@@ -10,6 +10,13 @@
 # ---------------------------------------------------------------------
 
 
+# Load libraries
+library(sf); library(raster); library(ggplot2); library(dplyr); library(xts); library(geosphere); library(quantreg); library(orca)
+library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse); library(RColorBrewer)
+library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
+library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table); library(plotly)
+
+
 # Create folders for data and output
 if(!dir.exists(here('Data'))) {dir.create(here('Data'))}
 if(!dir.exists(here('Output'))) {dir.create(here('Output'))}
