@@ -20,7 +20,7 @@
 
 #######################################################################
 ### Load libraries ###
-library('here')
+library('here'); lib_install <- FALSE
 
 ### Source in function files ###
 setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setwd(here())
@@ -39,7 +39,7 @@ historical_analysis = TRUE
 future_analysis = TRUE
 calcFutureWB = TRUE  # TRUE to re-run entire water balance model for future; FALSE to use pre-existing CONUS water balance projections from a Mike Tercek spreadsheet
 userSetJTemp = FALSE 
-make_plots = TRUE 
+make_plots = FALSE 
 provide_coords = FALSE # if true, user provides lat/lon coords. if false, lat/lon coords are pulled from centroid of watershed with given gage id
 flow_components = 3  # change the number of components that characterize the flow. can be 2 or 3. 2: flow has quick and slow components; 3: flow has quick, slow, and very slow components.
 FolderName = "non_optim" 
@@ -499,7 +499,6 @@ low_flow_mod = quantile(hist_flow_daily$Mod, low_flow_q)
 # High and low flow scatter plots - simple quantile comparison
 historic_75 = quantile(hist_flow_daily$Meas, 0.75); historic_25 = quantile(hist_flow_daily$Meas, 0.25)
 high_flow = hist_flow_daily[hist_flow_daily$Meas > high_flow_meas, ]
-make_scatterplot(high_flow$Mod, high_flow$Mod, "High Flow (75th Percentile) Daily Historical")
 #jpeg(file=paste0(figPath, "/", paste0(gsub(" ", "_", title), "_Measured_Modeled_Scatter.jpg")))
 plot(coredata(high_flow$Mod), coredata(high_flow$Meas), main='High Flow (75th Percentile) Daily Historical Streamflow', xlab = "Modeled Streamflow", ylab = "Measured Streamflow", 
      xlim=c(pmin(min(high_flow$Mod), min(high_flow$Meas)), pmax(max(high_flow$Mod), max(high_flow$Meas))), 
@@ -516,12 +515,6 @@ x_txt <- max(coredata(high_flow$Mod)) * (8/9)
 
 text(x = x_txt, y = y_txt, labels = sprintf("NSE: %.2f \nR2: %.2f",nse_plot, r2_plot), col = "red", cex = 1.2) 
 #dev.off()
-
-
-low_flow = (flow_meas %>% filter((date <= as.Date("2021-12-31")) & (daily_mm < historic_25)))
-make_scatterplot((flow_mod %>% filter(date %in% low_flow$date))$daily_mm, low_flow$daily_mm,
-                 "Low Flow (25th Percentile) Daily Historical")
-
 
 
 

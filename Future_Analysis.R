@@ -19,6 +19,7 @@ gcm_list <- c('BNU-ESM', 'CCSM4', 'CNRM-CM5', 'CSIRO-Mk3-6-0', 'CanESM2','GFDL-E
 ### Use Mike Tercek's pre-generated gridded CONUS water balance model for future projections ###
 # EDIT
 future_wb_conus <- get_conus_wb(SiteID_FileName, lat, lon, endY, 2099)
+future_wb_conus$adj_runoff <-get_adj_runoff(future_wb_conus$runoff, gw_add = gw_add, vfm = vfm)
 
 # not sure what workflow should be if they already have this file (i.e. directly from Mike)
 # if(file.exists(file.path(dataPath, paste("WB",SiteID_FileName,"2023_2100.csv", sep = "_")))){
@@ -39,7 +40,7 @@ future_wb_conus <- get_conus_wb(SiteID_FileName, lat, lon, endY, 2099)
 # has the name projection been changed?
 if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))){
   # Get future climate data
-  future_climate <- get_maca_point()
+  future_climate <- get_maca_point(lat, lon, SiteID_FileName)
   future_climate$date <- as.Date(future_climate$date)
 
   # Run water balance code for each future projection
@@ -108,8 +109,8 @@ for (j in 1:length(gcms)){
   DailyDrainFuture <- Drain(data, q0, qa, qb, s0, sa, sb, v0, va, vb)
   
   # Save streamflow projection to futures dataframe
-  drainage_qsvt <- cbind(gcms[j], fut_ro$date, DailyDrainFuture)
-  colnames(drainage_qsvt)[] <- c("projection","date","adj_runoff","quick","slow","veryslow","total")
+  drainage_qsvt <- cbind(gcms[j], fut_ro$Date, DailyDrainFuture)
+  colnames(drainage_qsvt)[] <- c("projection", "date", "adj_runoff", "quick", "slow", "veryslow", "total")
   futures <-rbind(futures, drainage_qsvt)
 }
 
@@ -152,6 +153,57 @@ monthly_df$date<-as.Date(paste(monthly_df$yr_mo,"-01",sep=""))
 
 # Mean of future daily streamflow projections
 mean_daily_df <- daily_df %>% filter(projection!='Historical') %>% group_by(date) %>% dplyr::summarize(mean_total=mean(total))
+
+
+
+#######################################################################
+### SELECT DIVERGENT CLIMATE FUTURES ###
+cf_names <- c('Warm Wet', 'Hot Dry', 'Warm Dry', 'Hot Wet')
+
+# Pull meteorological data and group by year
+# historical
+hist_climate_ann <- as.data.frame(DailyClimData %>% group_by(year(date)) %>%
+                                    dplyr::summarize(year=first(year(date)), pr = sum(pr, na.rm = TRUE),
+                                                     tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
+hist_climate_ann$t_avg <- (hist_climate_ann$tmmn + hist_climate_ann$tmmx) / 2
+
+# future
+future_climate <- get_maca_point(lat, lon, SiteID_FileName); future_climate$date <- as.Date(future_climate$date, '%d/%m/%Y')
+future_climate_ann <- as.data.frame(future_climate %>% group_by(projection, year(date)) %>%
+                                                  dplyr::summarize(projection=first(projection), year=first(year(date)), pr = sum(pr, na.rm = TRUE),
+                                                                   tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
+future_climate_ann$t_avg <- (future_climate_ann$tmmn + future_climate_ann$tmmx) / 2
+
+# calculate averages over historical period
+hist_avg_precip <- mean(hist_climate_ann$pr)
+hist_avg_tavg <- mean(hist_climate_ann$t_avg)
+
+# calculate averages over future period (30 yr average centered around 2050: 2035-2065)
+# something is wrong: mismatch in magnitude between historical + future precip
+future_climate_plot <- future_climate_ann %>% filter(year >= 2035 & year <= 2065) %>% group_by(projection) %>% 
+  dplyr::summarize(pr=mean(pr, na.rm=TRUE), t_avg=mean(t_avg, na.rm=TRUE), pr_delta=mean(pr, na.rm=TRUE)-hist_avg_precip,
+                   tavg_delta=mean(t_avg, na.rm=TRUE)-hist_avg_tavg)
+future_centroid_pr <- mean(future_climate_plot$pr_delta)
+future_centroid_tavg <- mean(future_climate_plot$tavg_delta)
+
+# Create individual columns for gcm/rcp
+future_climate_plot$gcm <- sapply(strsplit(future_climate_plot$projection, split = "\\."), `[`, 1)
+future_climate_plot$rcp <- sapply(strsplit(future_climate_plot$projection, split = "\\."), `[`, 2)
+
+# Identify the furthest futures in each quadrant
+### EDIT THIS ###
+future_climate_plot$distance_from_pr <- future_climate_plot$pr_delta-future_centroid_pr 
+future_climate_plot$distance_from_tavg <- future_climate_plot$tavg_delta-future_centroid_tavg
+
+# plot for visualization
+plot <- ggplot(data=future_climate_plot, aes(x=tavg_delta, y=pr_delta, color=rcp)) + geom_point() +
+  geom_text_repel(aes(label = gcm), color = 'black', max.overlaps=Inf) +
+  geom_hline(aes(yintercept=quantile(pr_delta, 0.5)), color = "black", linetype='dashed') + geom_vline(aes(xintercept=quantile(tavg_delta, 0.5)), color = "black", linetype='dashed') +
+  geom_rect(aes(xmin = quantile(tavg_delta, 0.25), xmax = quantile(tavg_delta, 0.75), ymin = quantile(pr_delta, 0.25), ymax = quantile(pr_delta, 0.75)), color = "black", size=1, alpha=0) +
+  labs(title=paste('Changes in climate means by 2050 at',SiteID), x='Change in annual average temperature [C]', y='Change in annual average precipitation [mm]', color='RCP') + 
+  scale_color_manual(values = c("rcp45" = "orange", "rcp85" = "red")) + nps_theme()
+print(plot)
+dev.off()
 
 
 
@@ -272,3 +324,25 @@ if(make_plots){
   print(plot)
   dev.off()
 }
+
+
+# trend plots (like historical)
+model1 <- ''; model2 <- ''
+model_names <- c('Warm Wet', 'Hot Dry')
+
+
+# heatmap
+daily_df$day <- factor(yday(daily_df$date), levels = unique(yday(daily_df$date)))
+jpeg(file=paste0(outLocationPathHist, "/", "Modeled_Daily_Heatmap.jpg"), width=600, height=400)
+ggplot(daily_df, aes(day, yr, fill = as.numeric(total))) + geom_tile() +
+  scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu"), trans='log', breaks=c(min(daily_df$total), 0.01, 0.1, 10, 100, max(daily_df$total)), 
+                       labels=c(sprintf('%.3f',  min(daily_df$total)),'.01','0.1','10', '100', sprintf('%.0f',  max(daily_df$total)))) +
+  labs(title = "Modeled daily streamflow", x='Month', fill = "Streamflow [mm]") +
+  scale_x_discrete(breaks=c("1", "32", "60", "91", "121", "152", "182", "213", "244", "274", "305", "335"), 
+                   labels = c("1" = "January", "32" = "February", "60" = "March", "91" = "April", "121" = "May", "152" = "June", 
+                              "182" = "July", "213" = "August", "244" = "September", "274" = "October", "305" = "November", "335" = "December")) +
+  theme(axis.text.x = element_text(angle = 90))
+dev.off()
+
+
+

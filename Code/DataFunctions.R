@@ -11,10 +11,13 @@
 
 
 # Load libraries
-library(sf); library(raster); library(ggplot2); library(dplyr); library(xts); library(geosphere); library(quantreg); library(orca)
-library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse); library(RColorBrewer)
-library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
-library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table); library(plotly)
+if(!lib_install){
+  library(sf); library(raster); library(ggplot2); library(dplyr); library(xts); library(geosphere); library(quantreg); library(orca)
+  library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse); library(RColorBrewer)
+  library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
+  library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table); library(plotly)
+  lib_install <- TRUE
+}
 
 
 # Create folders for data and output
@@ -211,7 +214,7 @@ get_daymet_data <- function(SiteID_FileName, startY, endY, lat, lon, dataPath){
 # Pull MACA projections for a single point and clean data
 # Args:
 # Returns:
-get_maca_point <- function(){
+get_maca_point <- function(lat, lon, SiteID_FileName){
   # Pull future meteorological data
   if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100.csv', sep='_')))){
     # Pull data
@@ -279,6 +282,7 @@ get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
   # Return file if it exists
   if(file.exists(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))){
     future_wb <- read.csv(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))
+    future_wb$Date <- as.Date(future_wb$Date, '%d/%m/%Y')
     return(future_wb)
   }
   
@@ -317,8 +321,11 @@ get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
     future_wb$projection <- paste(future_wb$GCM, future_wb$RCP, sep='.')
     future_wb <- subset(future_wb, select = -c(latitude, longitude, GCM, RCP))
     
-    # convert from mm to in 
+    # Convert from mm to in 
     future_wb <- future_wb %>% dplyr::mutate(across(where(is.numeric), ~ . / 25.4))
+    
+    # Get adjusted runoff
+    future_wb$adj_runoff<- get_adj_runoff(future_wb$runoff, gw_add = gw_add, vfm = vfm)
   }
   write.csv(future_wb, file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))
   return(future_wb)
