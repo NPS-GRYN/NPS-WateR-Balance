@@ -282,7 +282,7 @@ get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
   # Return file if it exists
   if(file.exists(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))){
     future_wb <- read.csv(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))
-    future_wb$Date <- as.Date(future_wb$Date, '%d/%m/%Y')
+    future_wb$Date <- as.Date(future_wb$Date, '%m/%d/%Y')
     return(future_wb)
   }
   
