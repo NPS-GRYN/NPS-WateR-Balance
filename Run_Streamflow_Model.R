@@ -42,6 +42,7 @@ userSetJTemp = FALSE
 make_plots = FALSE 
 provide_coords = FALSE # if true, user provides lat/lon coords. if false, lat/lon coords are pulled from centroid of watershed with given gage id
 flow_components = 3  # change the number of components that characterize the flow. can be 2 or 3. 2: flow has quick and slow components; 3: flow has quick, slow, and very slow components.
+percent_skill_cutoff = 0.1
 FolderName = "non_optim" 
 
 ### Define watershed ###
@@ -112,6 +113,17 @@ if(!dir.exists(here('Output', SiteID_FileName, 'Streamflow', FolderName))) {dir.
 if(!provide_coords){
   coords <- get_coords(SiteID_FileName, GageSiteID); lat <- coords$lat; lon <- coords$lon
 }
+
+# Define regions (PWR, SER, SWR) based on latitude and longitude
+# estimates based on: https://www.fs.usda.gov/rm/pubs_series/rmrs/gtr/rmrs_gtr413.pdf 
+if(lat>=41.5 & lat <=49.5 & lon >=-124.5 & lon<=-110.5){
+  region='PWR'
+} else if(lat>=24.5 & lat<=40 & lon>=-100 & lon<=-70){
+  region='SER'
+} else if(lat<=41 & lat>=31 & lon>=-125 & lon<=-107){
+  region='SWR'
+} else{region='other'}
+
 
 # Define variables that do not need to be defined outside of the function
 # is this supposed to be 11 or 1???

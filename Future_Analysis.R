@@ -7,6 +7,8 @@
 # 
 # EDITS IN PROGRESS
 # implement code to pull and use Mike's data (see DataFunctions.R script)
+# add future scenarios to plots of the future
+# remember to upload the model performance file to GitHub
 # ---------------------------------------------------------------------
 
 
@@ -15,6 +17,13 @@
 ### GENERATE FUTURE WATER BALANCE MODELS ###
 gcm_list <- c('BNU-ESM', 'CCSM4', 'CNRM-CM5', 'CSIRO-Mk3-6-0', 'CanESM2','GFDL-ESM2G', 'HadGEM2-CC365', 
               'IPSL-CM5A-LR', 'MIROC5', 'MIROC-ESM-CHEM','MRI-CGCM3', 'NorESM1-M', 'inmcm4')
+
+
+### Determine low skill models using list from Rupp et al. 2016
+low_skill_models = read.delim('./Data/GCM_skill_by_region.txt', header=TRUE) %>% 
+  filter(Region == ifelse(region %in% Region, region, "mean")) %>% top_n(n=round(length(gcm_list)*percent_skill_cutoff), wt=Rank)
+# remove the low skill models
+#gcm_list[!gcm_list %in% low_skill_models$GCM]
 
 ### Use Mike Tercek's pre-generated gridded CONUS water balance model for future projections ###
 # EDIT
@@ -162,9 +171,9 @@ mean_daily_df <- daily_df %>% filter(projection!='Historical') %>% group_by(date
 
 #######################################################################
 ### SELECT DIVERGENT CLIMATE FUTURES ###
-cf_names <- c('Warm Wet', 'Hot Dry', 'Warm Dry', 'Hot Wet')
+cf_names <- c("Warm Wet", "Hot Wet", "Central", "Warm Dry", "Hot Dry")
 
-# Pull meteorological data and group by year
+### Pull and aggregate meteorological data
 # historical
 hist_climate_ann <- as.data.frame(DailyClimData %>% group_by(year(date)) %>%
                                     dplyr::summarize(year=first(year(date)), pr = sum(pr, na.rm = TRUE),
@@ -184,23 +193,67 @@ hist_avg_tavg <- mean(hist_climate_ann$t_avg)
 
 # calculate averages over future period (30 yr average centered around 2050: 2035-2065)
 # something is wrong: mismatch in magnitude between historical + future precip
-future_climate_plot <- future_climate_ann %>% filter(year >= 2035 & year <= 2065) %>% group_by(projection) %>% 
+# probably an error in get_maca_point :(
+future_means <- future_climate_ann %>% filter(year >= 2035 & year <= 2065) %>% group_by(projection) %>% 
   dplyr::summarize(pr=mean(pr, na.rm=TRUE), t_avg=mean(t_avg, na.rm=TRUE), pr_delta=mean(pr, na.rm=TRUE)-hist_avg_precip,
                    tavg_delta=mean(t_avg, na.rm=TRUE)-hist_avg_tavg)
-future_centroid_pr <- mean(future_climate_plot$pr_delta)
-future_centroid_tavg <- mean(future_climate_plot$tavg_delta)
+future_centroid_pr <- mean(future_means$pr_delta)
+future_centroid_tavg <- mean(future_means$tavg_delta)
 
 # Create individual columns for gcm/rcp
-future_climate_plot$gcm <- sapply(strsplit(future_climate_plot$projection, split = "\\."), `[`, 1)
-future_climate_plot$rcp <- sapply(strsplit(future_climate_plot$projection, split = "\\."), `[`, 2)
+future_means$gcm <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 1)
+future_means$rcp <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 2)
 
-# Identify the furthest futures in each quadrant
+
+### Identify the furthest futures in each quadrant using principal component analysis (PCA)
+# Adapted from Amber's climate futures code
 ### EDIT THIS ###
-future_climate_plot$distance_from_pr <- future_climate_plot$pr_delta-future_centroid_pr 
-future_climate_plot$distance_from_tavg <- future_climate_plot$tavg_delta-future_centroid_tavg
 
-# plot for visualization
-plot <- ggplot(data=future_climate_plot, aes(x=tavg_delta, y=pr_delta, color=rcp)) + geom_point() +
+# Label each climate future into quadrants
+Pr0 = as.numeric(quantile(future_means$pr_delta, 0)); Pr25 = as.numeric(quantile(future_means$pr_delta, 0.25)); PrAvg = as.numeric(mean(future_means$pr_delta)); Pr75 = as.numeric(quantile(future_means$pr_delta, 0.75)); Pr100 = as.numeric(quantile(future_means$pr_delta, 1))
+Tavg0 = as.numeric(quantile(future_means$tavg_delta, 0)); Tavg25 = as.numeric(quantile(future_means$tavg_delta, 0.25)) ; Tavg = as.numeric(mean(future_means$tavg_delta)); Tavg75 = as.numeric(quantile(future_means$tavg_delta, 0.75)); Tavg100 = as.numeric(quantile(future_means$tavg_delta, 1))
+
+future_means$CF1 = as.numeric((future_means$tavg_delta<Tavg & future_means$pr_delta>Pr75) | future_means$tavg_delta<Tavg25 & future_means$pr_delta>PrAvg)
+future_means$CF2 = as.numeric((future_means$tavg_delta>Tavg & future_means$pr_delta>Pr75) | future_means$tavg_delta>Tavg75 & future_means$pr_delta>PrAvg)
+future_means$CF3 = as.numeric((future_means$tavg_delta>Tavg25 & future_means$tavg_delta<Tavg75) & (future_means$pr_delta>Pr25 & future_means$pr_delta<Pr75))
+future_means$CF4 = as.numeric((future_means$tavg_delta<Tavg & future_means$pr_delta<Pr25) | future_means$tavg_delta<Tavg25 & future_means$pr_delta<PrAvg)
+future_means$CF5 = as.numeric((future_means$tavg_delta>Tavg & future_means$pr_delta<Pr25) | future_means$tavg_delta>Tavg75 & future_means$pr_delta<PrAvg)
+
+
+#Assign full name of climate future to new variable CF
+future_means$CF <- NULL
+for(i in 1:5) {
+  future_means$CF[future_means[[paste0("CF", i)]] == 1] <- cf_names[i]
+}
+future_means <- future_means %>% select(-CF1, -CF2, -CF3, -CF4, -CF5)
+
+
+### PCA
+FM <- future_means %>% select("projection","pr_delta","tavg_delta") %>%  
+  remove_rownames %>% column_to_rownames(var="projection") 
+CF_GCM = data.frame(projection = future_means$projection, CF = future_means$CF)
+
+pca <- prcomp(FM, center = TRUE,scale. = TRUE) 
+
+#ggsave("PCA-loadings.png", plot=autoplot(pca, data = FM, loadings = TRUE,label=TRUE),width = PlotWidth, height = PlotHeight, path = OutDir) 
+
+pca.df<-as.data.frame(pca$x) 
+write.csv(pca.df, paste0(outLocationPath, "PCA-loadings.csv"))
+
+#Take the min/max of each of the PCs
+PCs <-rbind(data.frame(projection = c(rownames(pca.df)[which.min(pca.df$PC1)],rownames(pca.df)[which.max(pca.df$PC1)]),PC="PC1"),
+            data.frame(projection = c(rownames(pca.df)[which.min(pca.df$PC2)],rownames(pca.df)[which.max(pca.df$PC2)]),PC="PC2"))
+
+#Assigns CFs to diagonals
+diagonals <- rbind(data.frame(CF = cf_names[c(1,5)],diagonals=factor("diagonal1")),data.frame(CF = cf_names[c(4,2)],diagonals=factor("diagonal2")))
+
+PCA <- CF_GCM %>% filter(projection %in% PCs$projection) %>% left_join(diagonals,by="CF") %>% right_join(PCs,by="projection")
+
+# add Amber's code for addressing problems (if necessary)
+
+
+### Plot for visualization
+plot <- ggplot(data=future_means, aes(x=tavg_delta, y=pr_delta, color=rcp)) + geom_point() +
   geom_text_repel(aes(label = gcm), color = 'black', max.overlaps=Inf) +
   geom_hline(aes(yintercept=quantile(pr_delta, 0.5)), color = "black", linetype='dashed') + geom_vline(aes(xintercept=quantile(tavg_delta, 0.5)), color = "black", linetype='dashed') +
   geom_rect(aes(xmin = quantile(tavg_delta, 0.25), xmax = quantile(tavg_delta, 0.75), ymin = quantile(pr_delta, 0.25), ymax = quantile(pr_delta, 0.75)), color = "black", size=1, alpha=0) +
@@ -209,6 +262,14 @@ plot <- ggplot(data=future_climate_plot, aes(x=tavg_delta, y=pr_delta, color=rcp
 print(plot)
 dev.off()
 
+
+# Identify models in format for plotting
+model_names <- PCA$projection; scenario_names <- PCA$CF
+color_names <- c("#12045C","#E10720","#9A9EE5","#F3D3CB")
+
+# identify warm wet/hot dry [1:2] or warm dry/hot wet [3:4] or all (comment out both lines)
+model_names[1:2]; scenario_names[1:2]; color_names[1:2]
+#model_names[3:4]; scenario_names[3:4]; color_names[3:4]
 
 
 #######################################################################
@@ -334,14 +395,8 @@ if(make_plots){
 ### TEMPORARY CODE FOR MODEL SELECTION ###
 # until I figure out how to select these models #
 
-model1 <- 'CNRM-CM5.rcp45'; model2 <- 'MIROC-ESM-CHEM.rcp85'
-model_names <- c(model1, model2) #, model3, model4)
-scenario_names <- c('Warm Wet', 'Hot Dry', 'Warm Dry', 'Hot Wet')
-color_names <- c("#12045C","#E10720","#9A9EE5","#F3D3CB")
 
-# select warm wet/hot dry [1:2] or warm dry/hot wet [3:4] or all (comment out both lines)
-model_names[1:2]; scenario_names[1:2]; color_names[1:2]
-#model_names[3:4]; scenario_names[3:4]; color_names[3:4]
+
 
 
 
