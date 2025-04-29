@@ -9,6 +9,8 @@
 # implement code to pull and use Mike's data (see DataFunctions.R script)
 # add future scenarios to plots of the future
 # remember to upload the model performance file to GitHub
+# make sure everything runs smoothly
+# figure out what's the appropriate line of reasoning for the future wb models
 # ---------------------------------------------------------------------
 
 
@@ -18,19 +20,16 @@
 gcm_list <- c('BNU-ESM', 'CCSM4', 'CNRM-CM5', 'CSIRO-Mk3-6-0', 'CanESM2','GFDL-ESM2G', 'HadGEM2-CC365', 
               'IPSL-CM5A-LR', 'MIROC5', 'MIROC-ESM-CHEM','MRI-CGCM3', 'NorESM1-M', 'inmcm4')
 
-
-### Determine low skill models using list from Rupp et al. 2016
+# Remove low skill models using list from Rupp et al. 2016
 low_skill_models = read.delim('./Data/GCM_skill_by_region.txt', header=TRUE) %>% 
   filter(Region == ifelse(region %in% Region, region, "mean")) %>% top_n(n=round(length(gcm_list)*percent_skill_cutoff), wt=Rank)
-# remove the low skill models
 #gcm_list[!gcm_list %in% low_skill_models$GCM]
 
 ### Use Mike Tercek's pre-generated gridded CONUS water balance model for future projections ###
-# EDIT
 future_wb_conus <- get_conus_wb(SiteID_FileName, lat, lon, endY, 2099)
 future_wb_conus$adj_runoff <-get_adj_runoff(future_wb_conus$runoff, gw_add = gw_add, vfm = vfm)
 
-# not sure what workflow should be if they already have this file (i.e. directly from Mike)
+# This is the code to read in the file if it was provided directly by Mike Tercek
 # if(file.exists(file.path(dataPath, paste("WB",SiteID_FileName,"2023_2100.csv", sep = "_")))){
 #   future_wb <- read.csv(file.path(dataPath, paste("WB",SiteID_FileName,"2023_2100.csv", sep = "_"))) 
 #   future_wb$Date <- as.Date(future_wb$Date, '%m/%d/%Y')
@@ -42,7 +41,6 @@ future_wb_conus$adj_runoff <-get_adj_runoff(future_wb_conus$runoff, gw_add = gw_
 #   
 #   #adjust for ground water addition and volume forcing multiplier
 #   future_wb$adj_runoff<- get_adj_runoff(future_wb$runoff, gw_add = gw_add, vfm = vfm)
-
 
 
 ### Re-run water balance model to generate future projections ###
@@ -100,12 +98,12 @@ if(make_plots){
 #######################################################################
 ### GENERATE FUTURE STREAMFLOW PROJECTIONS ###
 
-### Define which future water balance to use ###
+# Define which future water balance projection to use
 if(calcFutureWB){
   future_wb <- future_wb_calc
 } else{future_wb <- future_wb_conus}
 
-### Run IHACRES model for each future projection ###
+# Run IHACRES model for each future projection
 gcms<-unique(future_wb$projection)
 futures <- NULL
 for (j in 1:length(gcms)){
@@ -173,7 +171,7 @@ mean_daily_df <- daily_df %>% filter(projection!='Historical') %>% group_by(date
 ### SELECT DIVERGENT CLIMATE FUTURES ###
 cf_names <- c("Warm Wet", "Hot Wet", "Central", "Warm Dry", "Hot Dry")
 
-### Pull and aggregate meteorological data
+### Pull and aggregate meteorological data ###
 # historical
 hist_climate_ann <- as.data.frame(DailyClimData %>% group_by(year(date)) %>%
                                     dplyr::summarize(year=first(year(date)), pr = sum(pr, na.rm = TRUE),
@@ -205,11 +203,10 @@ future_means$gcm <- sapply(strsplit(future_means$projection, split = "\\."), `[`
 future_means$rcp <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 2)
 
 
-### Identify the furthest futures in each quadrant using principal component analysis (PCA)
-# Adapted from Amber's climate futures code
-### EDIT THIS ###
+### Identify the furthest futures in each quadrant using principal component analysis (PCA) ###
+# Adapted from Amber's climate futures code: https://github.com/nationalparkservice/CCRP_automated_climate_futures/blob/master/scripts/Plot_Table_Creation.R
 
-# Label each climate future into quadrants
+### Label each climate future with quadrants
 Pr0 = as.numeric(quantile(future_means$pr_delta, 0)); Pr25 = as.numeric(quantile(future_means$pr_delta, 0.25)); PrAvg = as.numeric(mean(future_means$pr_delta)); Pr75 = as.numeric(quantile(future_means$pr_delta, 0.75)); Pr100 = as.numeric(quantile(future_means$pr_delta, 1))
 Tavg0 = as.numeric(quantile(future_means$tavg_delta, 0)); Tavg25 = as.numeric(quantile(future_means$tavg_delta, 0.25)) ; Tavg = as.numeric(mean(future_means$tavg_delta)); Tavg75 = as.numeric(quantile(future_means$tavg_delta, 0.75)); Tavg100 = as.numeric(quantile(future_means$tavg_delta, 1))
 
@@ -227,36 +224,67 @@ for(i in 1:5) {
 }
 future_means <- future_means %>% select(-CF1, -CF2, -CF3, -CF4, -CF5)
 
+### Selection with corners method
+# Identify corners
+lx = min(future_means$tavg_delta); ux = max(future_means$tavg_delta); ly = min(future_means$pr_delta); uy = max(future_means$pr_delta)
+ww = c(lx,uy); wd = c(lx,ly); hw = c(ux,uy); hd = c(ux,ly)
+
+# Calculate Euclidean distance of each point from corners
+pts <- future_means
+pts$WW.distance <- sqrt((pts$tavg_delta - ww[1])^2 + (pts$pr_delta - ww[2])^2); pts$WD.distance <- sqrt((pts$tavg_delta - wd[1])^2 + (pts$pr_delta - wd[2])^2)
+pts$HW.distance <- sqrt((pts$tavg_delta - hw[1])^2 + (pts$pr_delta - hw[2])^2); pts$HD.distance <- sqrt((pts$tavg_delta - hd[1])^2 + (pts$pr_delta - hd[2])^2)
+
+# Select scenarios based on shortest distance
+pts %>% filter(CF == "Warm Wet") %>% slice(which.min(WW.distance)) %>% .$projection -> ww
+pts %>% filter(CF == "Warm Dry") %>% slice(which.min(WD.distance)) %>% .$projection -> wd
+pts %>% filter(CF == "Hot Wet") %>% slice(which.min(HW.distance)) %>% .$projection -> hw
+pts %>% filter(CF == "Hot Dry") %>% slice(which.min(HD.distance)) %>% .$projection -> hd
+
+future_means %>% mutate(corners = ifelse(projection == ww,"Warm Wet",
+                                         ifelse(projection == wd, "Warm Dry",
+                                                ifelse(projection == hw, "Hot Wet",
+                                                       ifelse(projection == hd, "Hot Dry",NA))))) -> future_means
 
 ### PCA
 FM <- future_means %>% select("projection","pr_delta","tavg_delta") %>%  
   remove_rownames %>% column_to_rownames(var="projection") 
 CF_GCM = data.frame(projection = future_means$projection, CF = future_means$CF)
+pca.df <- as.data.frame(prcomp(FM, center = TRUE,scale. = TRUE)$x)
 
-pca <- prcomp(FM, center = TRUE,scale. = TRUE) 
-
-#ggsave("PCA-loadings.png", plot=autoplot(pca, data = FM, loadings = TRUE,label=TRUE),width = PlotWidth, height = PlotHeight, path = OutDir) 
-
-pca.df<-as.data.frame(pca$x) 
-write.csv(pca.df, paste0(outLocationPath, "PCA-loadings.csv"))
+# Save results of PCA
+if(make_plots){
+  ggsave("PCA-loadings.jpg", plot=autoplot(pca, data = FM, loadings = TRUE,label=TRUE), width=8, height=5, path = outLocationPath) 
+}
+write.csv(pca.df, paste0(outLocationPath, "/PCA-loadings.csv"))
 
 #Take the min/max of each of the PCs
 PCs <-rbind(data.frame(projection = c(rownames(pca.df)[which.min(pca.df$PC1)],rownames(pca.df)[which.max(pca.df$PC1)]),PC="PC1"),
             data.frame(projection = c(rownames(pca.df)[which.min(pca.df$PC2)],rownames(pca.df)[which.max(pca.df$PC2)]),PC="PC2"))
 
-#Assigns CFs to diagonals
+# Assigns CFs to diagonals
 diagonals <- rbind(data.frame(CF = cf_names[c(1,5)],diagonals=factor("diagonal1")),data.frame(CF = cf_names[c(4,2)],diagonals=factor("diagonal2")))
 
+# Aggregate and add PCA selections to dataframes
 PCA <- CF_GCM %>% filter(projection %in% PCs$projection) %>% left_join(diagonals,by="CF") %>% right_join(PCs,by="projection")
+future_means %>% mutate(pca = ifelse(projection %in% PCs$projection[which(PCs$PC=="PC1")], as.character(CF), #assign PCs to quadrants and select those projections
+                                     ifelse(projection %in% PCs$projection[which(PCs$PC=="PC2")], as.character(CF),NA))) -> future_means #future_means
 
-# add Amber's code for addressing problems (if necessary)
+# Check whether duplicate models were selected and fix if so
+if(length(setdiff(cf_names[cf_names != "Central"],future_means$pca)) > 0){ #if a quadrant is missing 
+  future_means$pca[which(future_means$corners == setdiff(cf_names[cf_names != "Central"],future_means$pca))] = setdiff(cf_names[cf_names != "Central"],future_means$pca) #assign corners selection to that CF
+  if(nrow(PCA[duplicated(PCA$projection),]) > 0) { #If there is a redundant projection
+    future_means$pca = future_means$pca #Do nothing - otherwise end up with empty quadrant. This line could be removed and make the previous statement inverse but it makes it more confusing what's going on that way
+  } else{
+    future_means$pca[which(future_means$projection == ID.redundant.gcm(PCA))] = NA #Removes the projection that is in redundant diagonal
+  }
+}
 
 
-### Plot for visualization
+### Plot for visualization ###
 plot <- ggplot(data=future_means, aes(x=tavg_delta, y=pr_delta, color=rcp)) + geom_point() +
   geom_text_repel(aes(label = gcm), color = 'black', max.overlaps=Inf) +
-  geom_hline(aes(yintercept=quantile(pr_delta, 0.5)), color = "black", linetype='dashed') + geom_vline(aes(xintercept=quantile(tavg_delta, 0.5)), color = "black", linetype='dashed') +
-  geom_rect(aes(xmin = quantile(tavg_delta, 0.25), xmax = quantile(tavg_delta, 0.75), ymin = quantile(pr_delta, 0.25), ymax = quantile(pr_delta, 0.75)), color = "black", size=1, alpha=0) +
+  geom_hline(aes(yintercept=PrAvg), color = "black", linetype='dashed') + geom_vline(aes(xintercept=Tavg), color = "black", linetype='dashed') +
+  geom_rect(aes(xmin = Tavg25, xmax = Tavg75, ymin = Pr25, ymax = Pr75), color = "black", linewidth=1, alpha=0) +
   labs(title=paste('Changes in climate means by 2050 at',SiteID), x='Change in annual average temperature [C]', y='Change in annual average precipitation [mm]', color='RCP') + 
   scale_color_manual(values = c("rcp45" = "orange", "rcp85" = "red")) + nps_theme()
 print(plot)
@@ -264,16 +292,16 @@ dev.off()
 
 
 # Identify models in format for plotting
-model_names <- PCA$projection; scenario_names <- PCA$CF
+model_names <- (future_means %>% filter(!is.na(pca)))$projection; scenario_names <- (future_means %>% filter(!is.na(pca)))$pca
 color_names <- c("#12045C","#E10720","#9A9EE5","#F3D3CB")
 
 # identify warm wet/hot dry [1:2] or warm dry/hot wet [3:4] or all (comment out both lines)
-model_names[1:2]; scenario_names[1:2]; color_names[1:2]
-#model_names[3:4]; scenario_names[3:4]; color_names[3:4]
+model_names <- model_names[1:2]; scenario_names <- scenario_names[1:2]; color_names <- color_names[1:2]
+#model_names <- model_names[3:4]; scenario_names <- scenario_names[3:4]; color_names <- color_names[3:4]
 
 
 #######################################################################
-### PLOT FUTURE STREAMFLOW ### 
+### PLOT FUTURE STREAMFLOW FOR ALL MODELS ### 
 
 if(make_plots){
   # Daily streamflow projections for all models
@@ -391,17 +419,9 @@ if(make_plots){
 }
 
 
-#######################################################################
-### TEMPORARY CODE FOR MODEL SELECTION ###
-# until I figure out how to select these models #
-
-
-
-
-
 
 #######################################################################
-### GENERAL STREAMFLOW PLOTS ###
+### PLOT FUTURE STREAMFLOW FOR IDENTIFIED MODELS ###
 
 ### Heatmap - daily
 plot_list <- list()
@@ -457,7 +477,7 @@ dev.off()
 
 
 #######################################################################
-### TREND PLOTS FOR MODELED STREAMFLOW METRICS ###
+### PLOT STREAMFLOW TRENDS AND METRICS ###
 # edit width of jpg figure depending on model_names
 
 # General Mann-Kendall test on daily streamflow ? should probably be seasonal

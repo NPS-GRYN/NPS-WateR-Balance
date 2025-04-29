@@ -385,4 +385,18 @@ get_water_year <- function(date){
   }
 }
 
+
+
+# Identify whether redundant climate futures were selected
+ID.redundant.gcm <- function(PCA){
+  #ID redundant diagonal
+  redundant.diag=count(PCA,diagonals)$diagonals[which(count(PCA,diagonals)$n==1)] 
+  
+  #ID which PC has the redundant diagonal
+  PC.foul = PCA$PC[which(PCA$diagonals == redundant.diag)] 
+  
+  #ID projection that is in both the  redundant diagonal and the duplicative PC
+  PCA$projection[which(PCA$PC == PC.foul & PCA$projection != PCA$projection[which(PCA$diagonals == redundant.diag)])] 
+}
+
   
