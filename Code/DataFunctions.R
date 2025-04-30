@@ -93,7 +93,7 @@ get_gage_data <- function(GageSiteID, incompleteMonths, fillLeapDays, dataPath){
   
   # Extract square mileage of the watershed from the EGRET package
   obj = readNWISInfo(siteNumber = GageSiteID, parameterCd = "00060", interactive = FALSE)
-  sqmi <- obj$drain_area_va
+  sqmi <<- obj$drain_area_va
   
   # Aggregate gage discharge data daily and convert from cfs to mm 
   meas_flow_daily <- data.frame(Date = DailyStream$Date, MeasMM = DailyStream$CFS*28316847*86400/(2590000000000 * sqmi))
@@ -251,6 +251,7 @@ get_maca_point <- function(lat, lon, SiteID_FileName){
     write.csv(future_climate, file = here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100.csv', sep='_')), row.names = FALSE)
   } else {
     future_climate <- read.csv(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100.csv', sep='_')))
+    #may or may not need this: future_climate$date <- as.Date(future_climate$date, '%d/%m/%Y')
   }
   return(future_climate)
 }
@@ -303,7 +304,19 @@ get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
           
           # test url: http://www.yellowstone.solutions/thredds/ncss/daily_or_monthly/gcm/rcp85/inmcm4/V_1_5_2099_inmcm4_rcp85_soil_water_monthly.nc4?var=soil_water&latitude=45&longitude=-111&time_start=2099-01-16T05%3A14%3A31.916Z&time_end=2099-12-17T00%3A34%3A14.059Z&accept=csv_file
           
-          holder <-data.frame(fread(data_url, verbose=FALSE, showProgress = FALSE,)) 
+          # Catch error if Mike's thredds server is not running
+          holder <- result <- tryCatch(
+            {
+              holder <- data.frame(suppressWarnings(fread(data_url, verbose=FALSE, showProgress = FALSE)))
+              return(holder)
+            }, error = function(e) {
+              calcFutureWB <<- TRUE
+              message('The water balance server is not currently running. Please contact Mike Tercek (miketercek@yahoo.com) for more information.')
+              return(NA)
+              }
+          )
+          if(is.na(holder)){return(holder)}
+           
           colnames(holder) <- c("date", "latitude", "longitude", paste(climvar))
           holder$GCM <- GCM; holder$RCP <- RCP
           if(is.null(var_holder)){

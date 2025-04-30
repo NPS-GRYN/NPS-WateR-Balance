@@ -23,11 +23,14 @@ gcm_list <- c('BNU-ESM', 'CCSM4', 'CNRM-CM5', 'CSIRO-Mk3-6-0', 'CanESM2','GFDL-E
 # Remove low skill models using list from Rupp et al. 2016
 low_skill_models = read.delim('./Data/GCM_skill_by_region.txt', header=TRUE) %>% 
   filter(Region == ifelse(region %in% Region, region, "mean")) %>% top_n(n=round(length(gcm_list)*percent_skill_cutoff), wt=Rank)
-#gcm_list[!gcm_list %in% low_skill_models$GCM]
+gcm_list[!gcm_list %in% low_skill_models$GCM]
 
 ### Use Mike Tercek's pre-generated gridded CONUS water balance model for future projections ###
 future_wb_conus <- get_conus_wb(SiteID_FileName, lat, lon, endY, 2099)
-future_wb_conus$adj_runoff <-get_adj_runoff(future_wb_conus$runoff, gw_add = gw_add, vfm = vfm)
+if(!is.na(future_wb_conus)){
+  future_wb_conus$adj_runoff <-get_adj_runoff(future_wb_conus$runoff, gw_add = gw_add, vfm = vfm)
+}
+
 
 # This is the code to read in the file if it was provided directly by Mike Tercek
 # if(file.exists(file.path(dataPath, paste("WB",SiteID_FileName,"2023_2100.csv", sep = "_")))){
@@ -72,25 +75,27 @@ if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, end
 
 ### Compare the two future water balance projections, just for fun ###
 # plot AET, deficit, adj runoff for a sample year and a sample model
-model_run = 'HadGEM2-CC365.rcp45'; yr = 2060
-if(make_plots){
-  plot_aet <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=AET), col='black')+
-    geom_line(data=future_wb_calc %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=AET), col='red')+
-    labs(x='Date',y='AET [mm]', title='Actual Evapotranspiration') +
-    theme(legend.position = "none") + nps_theme()
-  plot_d <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=Deficit), col='black')+
-    geom_line(data=future_wb_calc %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=D), col='red')+
-    labs(x='Date',y='Deficit [mm]', title='Deficit') +
-    theme(legend.position = "none") + nps_theme()
-  plot_run <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=adj_runoff, col='Gridded WB'))+
-    geom_line(data=future_wb_calc %>% filter(projection==model_run& year(Date)==yr), aes(x=Date, y=adj_runoff, col='Calculated WB'))+
-    labs(x='Date',y='Adjusted Runoff [mm]', title='Adjusted Runoff') +  
-    scale_color_manual(values = c("Gridded WB"="black", "Calculated WB"="red"), name="WB Projections") + nps_theme()
-  
-  nameReduce = gsub(pattern = " ",replacement = "_", x = paste(SiteID, "Future WB Projection Comparison"))
-  jpeg(file=paste0(outLocationPath, "/", nameReduce, ".jpg"), width=2000, height=600)
-  grid.arrange(plot_aet, plot_d, plot_run, ncol = 3, widths=c(1,1,1.3), top = textGrob(paste('WB Projection Comparisons for', model_run, ':', yr),gp=gpar(fontsize=30)))
-  dev.off() 
+if(!is.na(future_wb_conus)){
+  model_run = 'HadGEM2-CC365.rcp45'; yr = 2060
+  if(make_plots){
+    plot_aet <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=AET), col='black')+
+      geom_line(data=future_wb_calc %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=AET), col='red')+
+      labs(x='Date',y='AET [mm]', title='Actual Evapotranspiration') +
+      theme(legend.position = "none") + nps_theme()
+    plot_d <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=Deficit), col='black')+
+      geom_line(data=future_wb_calc %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=D), col='red')+
+      labs(x='Date',y='Deficit [mm]', title='Deficit') +
+      theme(legend.position = "none") + nps_theme()
+    plot_run <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=adj_runoff, col='Gridded WB'))+
+      geom_line(data=future_wb_calc %>% filter(projection==model_run& year(Date)==yr), aes(x=Date, y=adj_runoff, col='Calculated WB'))+
+      labs(x='Date',y='Adjusted Runoff [mm]', title='Adjusted Runoff') +  
+      scale_color_manual(values = c("Gridded WB"="black", "Calculated WB"="red"), name="WB Projections") + nps_theme()
+    
+    nameReduce = gsub(pattern = " ",replacement = "_", x = paste(SiteID, "Future WB Projection Comparison"))
+    jpeg(file=paste0(outLocationPath, "/", nameReduce, ".jpg"), width=2000, height=600)
+    grid.arrange(plot_aet, plot_d, plot_run, ncol = 3, widths=c(1,1,1.3), top = textGrob(paste('WB Projection Comparisons for', model_run, ':', yr),gp=gpar(fontsize=30)))
+    dev.off() 
+  }
 }
 
 

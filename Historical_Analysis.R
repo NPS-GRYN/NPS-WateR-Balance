@@ -6,6 +6,7 @@
 # All trend analyses assume p < 0.05 is significant; this can be changed in the code
 # 
 # EDITS IN PROGRESS
+# NONE OF THE PLOTS WORK - FIGURE OUT
 # make script so it can be run independently or in conjunction with main script
 # figure out how to export 3D plot
 # ---------------------------------------------------------------------

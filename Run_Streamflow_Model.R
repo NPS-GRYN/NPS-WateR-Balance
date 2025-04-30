@@ -29,7 +29,7 @@ setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setw
 #######################################################################
 ### Set user-defined variables ###
 PETMethod = "Oudin" 
-optimization = FALSE 
+optimization = TRUE 
 delayStart = TRUE 
 NonZeroDrainInitCoeff = FALSE
 incompleteMonths = FALSE 
@@ -37,18 +37,18 @@ GridMET = TRUE
 fillLeapDays = TRUE 
 historical_analysis = TRUE
 future_analysis = TRUE
-calcFutureWB = TRUE  # TRUE to re-run entire water balance model for future; FALSE to use pre-existing CONUS water balance projections from a Mike Tercek spreadsheet
+calcFutureWB = FALSE  # TRUE to re-run entire water balance model for future; FALSE to use pre-existing CONUS water balance projections from a Mike Tercek spreadsheet
 userSetJTemp = FALSE 
-make_plots = FALSE 
+make_plots = TRUE 
 provide_coords = FALSE # if true, user provides lat/lon coords. if false, lat/lon coords are pulled from centroid of watershed with given gage id
 flow_components = 3  # change the number of components that characterize the flow. can be 2 or 3. 2: flow has quick and slow components; 3: flow has quick, slow, and very slow components.
 percent_skill_cutoff = 0.1
-FolderName = "non_optim" 
+FolderName = "optim" 
 
 ### Define watershed ###
 # centroid of watershed
-SiteID = "Redwood Creek"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
-GageSiteID <- '11460151'                  #define stream gage location (RWC: "11460151")
+SiteID = "Little River"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
+GageSiteID <- '03497300'                  #define stream gage location (RWC: "11460151")
 if(provide_coords) lat = 37.9; lon = -122.59 
 
 ### Define time period for historical analysis ###
@@ -553,7 +553,7 @@ dev.off()
 #######################################################################
 #######################################################################
 ### HISTORICAL STREAMFLOW ANALYSIS ###
-if(historical_anlysis){
+if(historical_analysis){
   source('Historical_Analysis.R')
 }
 
