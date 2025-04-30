@@ -29,8 +29,8 @@ setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setw
 #######################################################################
 ### Set user-defined variables ###
 PETMethod = "Oudin" 
-optimization = TRUE 
-delayStart = TRUE 
+optimization = FALSE 
+delayStart = FALSE 
 NonZeroDrainInitCoeff = FALSE
 incompleteMonths = FALSE 
 GridMET = TRUE
@@ -63,6 +63,13 @@ if(delayStart){ cutoffYear = startY+11 }else{cutoffYear = startY}
 individual_models = c('BNU-ESM.rcp45')
 
 
+### Set path variables ###
+if(!dir.exists(here('Data', SiteID_FileName))) {dir.create(here('Data', SiteID_FileName))}; dataPath <- here('Data', SiteID_FileName)
+if(!dir.exists(here('Output', SiteID_FileName))) {dir.create(here('Output', SiteID_FileName))}
+if(!dir.exists(here('Output', SiteID_FileName, 'Streamflow'))) {dir.create(here('Output', SiteID_FileName, 'Streamflow'))}
+if(!dir.exists(here('Output', SiteID_FileName, 'Streamflow', FolderName))) {dir.create(here('Output', SiteID_FileName, 'Streamflow', FolderName))}; outLocationPath = here('Output', SiteID_FileName, 'Streamflow', FolderName)
+
+
 #######################################################################
 ### Set model variables ###
 # Initial IHACRES flow coefficients
@@ -86,6 +93,16 @@ WB_lower = c(gw_add=0, vfm = 0.25, jrange = 1, hock = 0.25, hockros = 0.25, dro=
 WB_upper = c(gw_add = 1, vfm = 1, jrange = 5, hock = 8, hockros = 8, dro = 1, mondro = 1, aspect = 360, slope = 90, shade.coeff = 1, SWC.Max = 400)
 
 
+
+### Alternatively, read in previously optimized variables from results file
+if(file.exists(paste0(outLocationPath, "/optim_results.rds"))){
+  results <- readRDS(paste0(outLocationPath, "/optim_results.rds"))
+  gw_add <- results$gw_add; vfm <- results$vfm; jrange <- results$jrange; hock <- results$hock; hockros <- results$hockros; dro <- results$dro; 
+  mondro <- results$mondro; aspect <- results$aspect; slope <- results$slope; shade.coeff <- results$shade.coeff; SWC.Max <- results$SWC.Max; 
+  jtemp <- results$jtemp; qa <- results$qa; qb <- results$qb; sa <- results$sa; sb <- results$sb; va <- results$va; vb <- results$vb
+}
+
+
 #######################################################################
 ### Set other variables ###
 # Optional scaling factors for GridMET time series: if no scaling, set slopes to 1 and bias to 0
@@ -100,13 +117,7 @@ p_slope = 1; p_bias = 0
 ### GET DATA ###
 
 #######################################################################
-### Establish variables, file paths, and names ###
-
-# Set path variables
-if(!dir.exists(here('Data', SiteID_FileName))) {dir.create(here('Data', SiteID_FileName))}; dataPath <- here('Data', SiteID_FileName)
-if(!dir.exists(here('Output', SiteID_FileName))) {dir.create(here('Output', SiteID_FileName))}
-if(!dir.exists(here('Output', SiteID_FileName, 'Streamflow'))) {dir.create(here('Output', SiteID_FileName, 'Streamflow'))}
-if(!dir.exists(here('Output', SiteID_FileName, 'Streamflow', FolderName))) {dir.create(here('Output', SiteID_FileName, 'Streamflow', FolderName))}; outLocationPath = here('Output', SiteID_FileName, 'Streamflow', FolderName)
+### Get variables ###
 
 # Pull watershed shapefile from StreamStats database
 # figure out format / how to assign variables
@@ -347,6 +358,9 @@ if(optimization){
   DailyWB<- WB(DailyClimData, gw_add, vfm, jrange,hock, hockros, dro, mondro, aspect,
                slope, shade.coeff, jtemp, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
   DailyDrain <- Drain(DailyWB, q0, s0, v0, qa, qb, sa, sb, va, vb)
+  
+  ### Save results as RDS file ###
+  saveRDS(results, file = paste0(outLocationPath, "/optim_results.rds"))
 }
 
 
@@ -356,6 +370,8 @@ if(optimization){
 
 #######################################################################
 ### Run model without optimization ###
+
+
 if(!optimization){
   # run model
   DailyWB<- WB(DailyClimData, gw_add, vfm, jrange,hock, hockros, dro, mondro, aspect, slope,
@@ -371,11 +387,13 @@ if(!optimization){
   IHcoeffs <- tibble()
   nseD <-  IHACRESFlow(c(qa=qa, qb=qb, sa=sa, sb=sb, va=va), q0, s0, v0, DailyWB, meas_flow_daily, cutoffYear)
   results<- data.frame(results, IHcoeffs, elpTimeD=NA)
+  
+  # save results as RDS file
+  saveRDS(results, file = paste0(outLocationPath, "/non_optim_results.rds"))
 }
 
 
-### save results as RDS files ###
-saveRDS(results, file = paste0(outLocationPath, "/results.rds"))
+
 
 
 
@@ -421,14 +439,14 @@ if(make_plots){
   # monthly
   mod <- MeasMod$Mod; meas <- MeasMod$Meas
   plot(mod, meas, main ="Monthly Total Streamflow", xlab = "Modeled Streamflow (mm)", ylab = "Measured Streamflow (mm)")
-  text(0.25*par("usr")[2], 0.85*par("usr")[4], paste('NSE:',round(NSE(mod, meas),digits=2)), cex = 3)
+  text(0.35*par("usr")[2], 0.85*par("usr")[4], paste('NSE:',round(NSE(mod, meas),digits=2)), cex = 3)
   abline(lm(meas ~ 0 + mod), col= "red")
   abline(lm(meas ~ mod), col= "red")
   
   # annual
   mod <- coredata(hist_flow_ann$Mod); meas <- coredata(hist_flow_ann$Meas)
   plot(mod,meas, main ="Annual Total Streamflow", xlab = "Modeled Streamflow (mm)", ylab = "Measured Streamflow (mm)")
-  text(0.35*par("usr")[2], 0.85*par("usr")[4], paste('NSE:',round(NSE(mod, meas),digits=2)), cex = 3)
+  text(0.6*par("usr")[2], 0.85*par("usr")[4], paste('NSE:',round(NSE(mod, meas),digits=2)), cex = 3)
   abline(lm(meas ~ 0 + mod), col= "red")
   abline(lm(meas ~ mod), col= "red")
   dev.off()
@@ -518,7 +536,7 @@ plot(coredata(high_flow$Mod), coredata(high_flow$Meas), main='High Flow (75th Pe
 #abline(lm(coredata(high_flow$Meas) ~ 0 + coredata(high_flow$Mod)), col= "red")
 abline(lm(coredata(high_flow$Meas) ~ coredata(high_flow$Mod)), col= "red")
 
-# calcuLate statistics to locate on the plot
+# calculate statistics to locate on the plot
 nse_plot = NSE(coredata(high_flow$Mod), coredata(high_flow$Meas))
 r2_plot = R2(coredata(high_flow$Mod), coredata(high_flow$Meas))
 
@@ -540,7 +558,7 @@ line_data <- data.frame(intercept = coef(model)[seq(1, length(coef(model)), by =
                         color = colors, tau = c(0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99))
 
 jpeg(file=paste0(outLocationPath, "/", "Historical_QuantileRegression_Scatter.jpg"), width=800, height=500)
-plot <- ggplot(hist_flow_daily, aes(Mod,Meas)) + geom_point() +   geom_abline(data = line_data, aes(intercept = intercept, slope = slope, color = factor(tau)), size=1.1) +
+plot <- ggplot(hist_flow_daily, aes(Mod,Meas)) + geom_point() +   geom_abline(data = line_data, aes(intercept = intercept, slope = slope, color = factor(tau)), linewidth=1.1) +
   scale_color_manual(values = colors, labels = c(0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99), name = "Quantiles") +
   theme(legend.position = "right")+ scale_x_continuous(limits = c(1, NA)) + labs(title="Quantile Regression of Daily Historical Streamflow",y="Measured Streamflow", x="Modeled Streamflow")+
   scale_color_manual(values = colors, labels = c(bquote(bold("0.01:") * " -0.047"), bquote(bold("0.1:")*" 0.132"), bquote(bold("0.25:")*" 0.395"), bquote(bold("0.5:")*" 0.624"), bquote(bold("0.75:")*" 0.602"), bquote(bold("0.9:")*" 0.323"), bquote(bold("0.99:")*" -2.09")), name = "Pseudo R2 by Quantile") + 

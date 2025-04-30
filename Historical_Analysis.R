@@ -6,7 +6,7 @@
 # All trend analyses assume p < 0.05 is significant; this can be changed in the code
 # 
 # EDITS IN PROGRESS
-# NONE OF THE PLOTS WORK - FIGURE OUT
+# doesn't work when run in conjunction with main script
 # make script so it can be run independently or in conjunction with main script
 # figure out how to export 3D plot
 # ---------------------------------------------------------------------
@@ -19,10 +19,10 @@ setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setw
 
 #######################################################################
 # redefine gage site ID so this script can be run independently
-#GageSiteID <- GageSiteID
-#SiteID <- SiteID
-GageSiteID <- '03497300'
-SiteID <- 'Little River'
+GageSiteID <- GageSiteID
+SiteID <- SiteID
+#GageSiteID <- '03460000'
+#SiteID <- 'Cataloochee'
 
 SiteID_FileName <- gsub(pattern = " ", x = SiteID, replacement = "")
 
@@ -312,8 +312,8 @@ dev.off()
 #######################################################################
 ### Customizable plots: metric, season, etc ###
 
-# define flow level in cfs and convert to mm
-flow_level <- 1800 #* 28316847*86400/(2590000000000*watershed_area) 
+# define flow level in cfs 
+flow_level <- 1250
 # identify months of interest (numerical values)
 mos <- c(2, 3) 
 # is comparison above or below threshold?
