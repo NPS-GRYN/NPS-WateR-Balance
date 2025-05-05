@@ -10,6 +10,7 @@
 # add functionality to run the model many times (like Joseph's wrapper script) - not sure what this should look like
 # clean up, generally make user friendly
 # add info on how to run to the user manual
+# add code for watershed averages, not just centroids
 # ---------------------------------------------------------------------
 
 
@@ -48,7 +49,7 @@ FolderName = "optim"
 ### Define watershed ###
 # centroid of watershed
 SiteID = "Little River"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
-GageSiteID <- '03497300'                  #define stream gage location (RWC: "11460151")
+GageSiteID <- '03460000'                  #define stream gage location (RWC: "11460151")
 if(provide_coords) lat = 37.9; lon = -122.59 
 
 ### Define time period for historical analysis ###

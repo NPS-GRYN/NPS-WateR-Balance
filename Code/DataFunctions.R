@@ -284,6 +284,8 @@ get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
   if(file.exists(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))){
     future_wb <- read.csv(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))
     future_wb$Date <- as.Date(future_wb$Date, '%m/%d/%Y')
+    # not sure if I need this
+    #future_wb$adj_runoff<- get_adj_runoff(future_wb$runoff, gw_add = gw_add, vfm = vfm)
     return(future_wb)
   }
   
@@ -342,6 +344,29 @@ get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
   }
   write.csv(future_wb, file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))
   return(future_wb)
+}
+
+
+
+# Pull gridded water balance data from a file provided by Mike Tercek
+get_conus_wb_mike <- function(SiteID_FileName, dataPath, filename){
+  if(file.exists(filename)){
+    future_wb_conus <- read.csv(filename)
+    
+    # Clean: fix date, convert to mm, fix column names
+    future_wb_conus$Date <- as.Date(future_wb_conus$Date)
+    future_wb_conus<-cbind(future_wb_conus[,c("Date","GCM")], 25.4*(future_wb_conus[,c(which(colnames(future_wb_conus)=="Deficit.in"):ncol(future_wb_conus))]))
+    colnames(future_wb_conus)<- c("Date", "projection", "Deficit", "AET", "soil_water", "runoff", "rain", "accumswe", "PET")
+    #future_wb<-subset(future_wb, projection !="MIROC-ESM-CHEM.rcp85")   # drop "MIROC-ESM-CHEM.rcp85" because it doesn't have an associated RCP 4.5  
+    
+    # adjust for ground water addition and volume forcing multiplier
+    future_wb_conus$adj_runoff<- get_adj_runoff(future_wb_conus$runoff, gw_add = gw_add, vfm = vfm)
+    
+    # save 
+    write.csv(future_wb_conus, file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")), row.names=FALSE)
+    return(future_wb_conus)
+  }
+  return(NA)
 }
 
 
