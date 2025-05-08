@@ -48,7 +48,7 @@ FolderName = "optim"
 
 ### Define watershed ###
 # centroid of watershed
-SiteID = "Little River"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
+SiteID = "Cataloochee"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
 GageSiteID <- '03460000'                  #define stream gage location (RWC: "11460151")
 if(provide_coords) lat = 37.9; lon = -122.59 
 

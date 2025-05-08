@@ -226,7 +226,7 @@ get_maca_point <- function(lat, lon, SiteID_FileName){
     precip<-NULL; tasmin<-NULL; tasmax<-NULL; rsds<-NULL; vpd<-NULL; vas<-NULL; uas<-NULL 
     for(i in 2:length(colnames(future_climate_data))){
       split_colnames <- strsplit(colnames(future_climate_data[i]), "_")
-      combine <- data.frame(date=future_climate_data[,1], GCM=split_colnames[[1]][2], RCP=split_colnames[[1]][4],
+      combine <- data.frame(Date=future_climate_data[,1], GCM=split_colnames[[1]][2], RCP=split_colnames[[1]][4],
                             var=future_climate_data[,i])
       if(split_colnames[[1]][1] == 'pr') {precip <- rbind(precip, combine)}
       if(split_colnames[[1]][1] == 'tasmin') {tasmin <- rbind(tasmin, combine)}
@@ -236,22 +236,22 @@ get_maca_point <- function(lat, lon, SiteID_FileName){
       if(split_colnames[[1]][1] == 'vas') {vas <- rbind(vas, combine)}
       if(split_colnames[[1]][1] == 'uas') {uas <- rbind(uas, combine)}
     }
-    colnames(precip) <- c('date','GCM','RCP','pr'); colnames(tasmin) <- c('date','GCM','RCP','tmmn'); colnames(tasmax) <- c('date','GCM','RCP','tmmx')
-    colnames(rsds) <- c('date','GCM','RCP','srad'); colnames(vpd) <- c('date','GCM','RCP','vpd'); colnames(vas) <- c('date','GCM','RCP','vas'); colnames(uas) <- c('date','GCM','RCP','uas')
+    colnames(precip) <- c('Date','GCM','RCP','pr'); colnames(tasmin) <- c('Date','GCM','RCP','tmmn'); colnames(tasmax) <- c('Date','GCM','RCP','tmmx')
+    colnames(rsds) <- c('Date','GCM','RCP','srad'); colnames(vpd) <- c('Date','GCM','RCP','vpd'); colnames(vas) <- c('Date','GCM','RCP','vas'); colnames(uas) <- c('Date','GCM','RCP','uas')
     
-    future_climate <- Reduce(function(x, y) merge(x, y, by = c('date', 'GCM', 'RCP'), all = TRUE), list(precip, tasmin, tasmax, rsds, vpd, vas, uas))
+    future_climate <- Reduce(function(x, y) merge(x, y, by = c('Date', 'GCM', 'RCP'), all = TRUE), list(precip, tasmin, tasmax, rsds, vpd, vas, uas))
     
     future_climate$tmmn <- future_climate$tmmn - 273.15; future_climate$tmmx <- future_climate$tmmx - 273.15
     future_climate$vs <- sqrt(future_climate$vas^2 + future_climate$uas^2)
     future_climate <- future_climate %>% mutate(projection = paste0(GCM, '.', RCP))
     future_climate <- future_climate %>% select(-vas, -uas, -GCM, -RCP)
-    future_climate <- future_climate[,c('projection','date','pr','srad','tmmn','tmmx','vs','vpd')]
+    future_climate <- future_climate[,c('projection','Date','pr','srad','tmmn','tmmx','vs','vpd')]
     
     # Save
     write.csv(future_climate, file = here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100.csv', sep='_')), row.names = FALSE)
   } else {
     future_climate <- read.csv(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100.csv', sep='_')))
-    #may or may not need this: future_climate$date <- as.Date(future_climate$date, '%d/%m/%Y')
+    #may or may not need this: future_climate$Date <- as.Date(future_climate$Date, '%d/%m/%Y')
   }
   return(future_climate)
 }
@@ -283,7 +283,7 @@ get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
   # Return file if it exists
   if(file.exists(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))){
     future_wb <- read.csv(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))
-    future_wb$Date <- as.Date(future_wb$Date, '%m/%d/%Y')
+    future_wb$Date <- as.Date(future_wb$Date)
     # not sure if I need this
     #future_wb$adj_runoff<- get_adj_runoff(future_wb$runoff, gw_add = gw_add, vfm = vfm)
     return(future_wb)
@@ -372,10 +372,9 @@ get_conus_wb_mike <- function(SiteID_FileName, dataPath, filename){
 
 
 # Pull OpenET data for a single point
-get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileName, interval, dataPath){
+get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileName, interval, dataPath, api_key){
   file_path <- here(dataPath, paste0(paste("OpenET", interval, SiteID_FileName, startY, endY, sep = "_" ), '.csv'))
   if(!file.exists(file_path)){
-    api_key <- 'ZZjI9EAHEFsVhFf8WVgBD2J6ks14IbJZJgHYR1iBPO82EcYO2XxeDJAcwAN9'
     header <- add_headers(accept = 'application/json', Authorization = api_key, content_type = 'application/json')
     
     # get data

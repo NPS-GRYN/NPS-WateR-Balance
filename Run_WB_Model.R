@@ -46,6 +46,7 @@ userSetJTemp = FALSE
 make_plots = TRUE 
 provide_coords = FALSE # if true, user provides lat/lon coords. if false, lat/long coords are pulled from centroid of watershed with given gage id
 FolderName = "optim" 
+api_key = 'ZZjI9EAHEFsVhFf8WVgBD2J6ks14IbJZJgHYR1iBPO82EcYO2XxeDJAcwAN9'
 
 ### Define watershed ###
 # centroid of watershed
@@ -133,10 +134,10 @@ startDate<- ymd(paste(startY, startM, startD)); endDate<-  ymd(paste(endY, endM,
 ### Scrape and clean openET data ###
 
 if(optimization){
-  MonthlyET <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', dataPath)
+  MonthlyET <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', dataPath, api_key)
   if(startY < 2016){startY_daily <- 2016
   } else{startY_daily <- startY}
-  DailyET <- get_et_point(startY_daily, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', dataPath)
+  DailyET <- get_et_point(startY_daily, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', dataPath, api_key)
 }
 
 

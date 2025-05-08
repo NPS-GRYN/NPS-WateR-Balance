@@ -11,6 +11,7 @@
 # remember to upload the model performance file to GitHub
 # make sure everything runs smoothly
 # figure out what's the appropriate line of reasoning for the future wb models
+# add saving of future streamflow as csv
 # ---------------------------------------------------------------------
 
 
@@ -37,7 +38,8 @@ if(is.na(future_wb_conus)){
 }
 
 # If neither version of the gridded CONUS water balance model exists, calculate water balance
-if(is.na(future_wb_conus)){
+# edit if statement?
+if(length(future_wb_conus)==1){
   calcFutureWB <- TRUE
 }
 
@@ -49,7 +51,7 @@ if(is.na(future_wb_conus)){
 if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))){
   # Get future climate data
   future_climate <- get_maca_point(lat, lon, SiteID_FileName)
-  future_climate$date <- as.Date(future_climate$date)
+  future_climate$Date <- as.Date(future_climate$date)
 
   # Run water balance code for each future projection
   future_wb_calc <- NULL
@@ -62,7 +64,6 @@ if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, end
     future_wb_calc <- rbind(future_wb_calc, DailyWB_future)
   }
   # Save calculated WB
-  future_wb_calc <- future_wb_calc %>% rename(projection = run)
   write.csv(future_wb_calc, here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')), row.names=FALSE)
 } else{
   # Read in calculated WB 
@@ -74,6 +75,7 @@ if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, end
 
 ### Compare the two future water balance projections, just for fun ###
 # plot AET, deficit, adj runoff for a sample year and a sample model
+# edit if statement
 if(!is.na(future_wb_conus)){
   model_run = 'HadGEM2-CC365.rcp45'; yr = 2060
   if(make_plots){
