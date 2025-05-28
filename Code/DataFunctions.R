@@ -66,6 +66,21 @@ get_coords <- function(SiteID_FileName, GageSiteID){
 
 
 
+# Define regions (PWR, SER, SWR) based on latitude and longitude
+# estimates based on: https://www.fs.usda.gov/rm/pubs_series/rmrs/gtr/rmrs_gtr413.pdf 
+get_region <- function(lat, lon){
+  if(lat>=41.5 & lat <=49.5 & lon >=-124.5 & lon<=-110.5){
+    region='PWR'
+  } else if(lat>=24.5 & lat<=40 & lon>=-100 & lon<=-70){
+    region='SER'
+  } else if(lat<=41 & lat>=31 & lon>=-125 & lon<=-107){
+    region='SWR'
+  } else{region='other'}
+  return(region)
+}
+
+
+
 # Scrape data from USGS stream gage and aggregate
 # Args:
 #   GageSiteID
@@ -269,7 +284,6 @@ get_maca_point <- function(lat, lon, SiteID_FileName){
 # Pull MACA projections for an area of interest and clean data
 # Args:
 # Returns:
-# ADD this
 get_maca_data_area <- function(aoi, SiteID_FileName){
   if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_area.csv', sep='_')))){
     # Pull data
@@ -344,9 +358,9 @@ get_maca_data_area <- function(aoi, SiteID_FileName){
 # Returns:
 #   Gridded water balance data for CONUS, which is saved as a csv file
 # NOTES: 
+# Mike Tercek's website is not consistently up and running so this will likely not work
 # "agdd", fix this - return when agdd is back on the website; make sure to put agdd BEFORE AET - will mess up code if agdd is last
 # MODIFIED from Janelle/Connor code
-# STILL EDITING: mike tercek's website appears to be down. next step: TEST
 get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
   # Return file if it exists
   if(file.exists(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))){

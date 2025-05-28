@@ -272,7 +272,7 @@ WB_Optim_AET = function(parms, Soil.Init, Snowpack.Init, T.Base, PETMethod, Dail
 #   cutoffYear: year at which calibration to historical data begins
 # Returns:
 #   Daily NSE of modeled streamflow
-IHACRESFlow <- function(parms, q0, s0, v0, DailyWB, meas_flow_daily_xts, cutoffYear){ 
+IHACRES_optim <- function(parms, q0, s0, v0, DailyWB, meas_flow_daily_xts, cutoffYear){ 
   if(flow_components==3){
     qa=parms[['qa']]; qb=parms[['qb']]; sa=parms[['sa']]; sb=parms[['sb']]; va=parms[['va']]
   } else if(flow_components==2){
