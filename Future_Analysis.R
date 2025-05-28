@@ -50,8 +50,8 @@ if(length(future_wb_conus)==1){
 # has the name projection been changed?
 if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))){
   # Get future climate data
-  future_climate <- get_maca_point(lat, lon, SiteID_FileName)
-  future_climate$Date <- as.Date(future_climate$date)
+  if(point_location) {future_climate <- get_maca_point(lat, lon, SiteID_FileName)
+  } else future_climate <- get_maca_data_area(aoi, SiteID_FileName)
 
   # Run water balance code for each future projection
   future_wb_calc <- NULL

@@ -129,6 +129,7 @@ get_gage_data <- function(GageSiteID, incompleteMonths, fillLeapDays, dataPath){
 
 
 # Scrape GridMET meteorological data and clean
+# CHANGE DATE to uppercase
 # Args:
 # Returns: 
 #   Dataframe with meteorological data at daily time scale
@@ -157,6 +158,8 @@ get_gridmet_data <- function(SiteID_FileName, startY, endY, lat, lon, aoi, dataP
       0
     }else{DailyClimData$pr[i] = get_slope_bias_adj(orig = DailyClimData$pr[i], bias = p_bias, slopeadj = p_slope)}
   }
+  
+  DailyClimData$date <- as.Date(DailyClimData$date)
   return(DailyClimData)
 }
 
@@ -207,8 +210,8 @@ get_daymet_data <- function(SiteID_FileName, startY, endY, lat, lon, aoi, dataPa
   DailyClimData$yday<- NULL
   DailyClimData$swe..kg.m.2.<- NULL
   if(fillLeapDays){ #order of columns was changed because of merging 
-    colnames(DailyClimData)<- c("date", "dayl..s." , "pr", "srad" ,"tmmx", "tmmn", "vp..Pa.", "month")
-  }else{colnames(DailyClimData)<- c("dayl..s." , "pr","srad" ,"tmmx", "tmmn", "vp..Pa." ,"date", "month")}
+    colnames(DailyClimData)<- c("Date", "dayl..s." , "pr", "srad" ,"tmmx", "tmmn", "vp..Pa.", "month")
+  }else{colnames(DailyClimData)<- c("dayl..s." , "pr","srad" ,"tmmx", "tmmn", "vp..Pa." ,"Date", "month")}
   
   return(DailyClimData)
 }
@@ -250,12 +253,13 @@ get_maca_point <- function(lat, lon, SiteID_FileName){
     future_climate <- future_climate %>% mutate(projection = paste0(GCM, '.', RCP))
     future_climate <- future_climate %>% select(-vas, -uas, -GCM, -RCP)
     future_climate <- future_climate[,c('projection','Date','pr','srad','tmmn','tmmx','vs','vpd')]
+    future_climate$Date <- as.Date(future_climate$Date)
     
     # Save
     write.csv(future_climate, file = here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_point.csv', sep='_')), row.names = FALSE)
   } else {
     future_climate <- read.csv(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_point.csv', sep='_')))
-    #may or may not need this: future_climate$Date <- as.Date(future_climate$Date, '%d/%m/%Y')
+    future_climate$Date <- as.Date(future_climate$Date, '%d/%m/%Y')
   }
   return(future_climate)
 }
@@ -263,22 +267,44 @@ get_maca_point <- function(lat, lon, SiteID_FileName){
 
 
 # Pull MACA projections for an area of interest and clean data
+# Args:
+# Returns:
 # ADD this
 get_maca_data_area <- function(aoi, SiteID_FileName){
   if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_area.csv', sep='_')))){
-    # Pull data - sometimes produces different lengths??
-    future_climate_data <- getMACA(aoi, c('tasmin','tasmax','pr','rsds','vpd','vas','uas'), timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'), 
+    # Pull data
+    future_climate_data <- getMACA(aoi, c('pr','rsds','vpd','vas','uas'), timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'), 
                                    startDate = '2023-01-01', endDate = '2099-12-31')
+    future_climate_data_tasmin <- getMACA(aoi, 'tasmin', timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'), 
+                                         startDate = '2023-01-01', endDate = '2099-12-31')
+    future_climate_data_tasmax <- getMACA(aoi, 'tasmax', timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'), 
+                                          startDate = '2023-01-01', endDate = '2099-12-31')
+    future_climate_data$tasmin <- future_climate_data_tasmin$air_temperature; future_climate_data$tasmax <- future_climate_data_tasmax$air_temperature
+    
+    # Check all the data is the correct length and re-query if not
+    dict <- list(precipitation='pr', tasmin='tasmin', tasmax='tasmax', surface_downwelling_shortwave_flux_in_air='rsds', vpd='vpd', vas='northward_wind', uas='eastward_wind')
+    for(var in c("precipitation","tasmin","tasmax","surface_downwelling_shortwave_flux_in_air","vpd","northward_wind","eastward_wind")){
+      while(nlyr(future_climate_data[[var]]) != 731224){
+        print(var)
+        new_future_climate_data <- getMACA(aoi, dict[[var]], timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'), 
+                       startDate = '2023-01-01', endDate = '2099-12-31')
+        if(var=='tasmax' | var=='tasmin'){
+          future_climate_data[[var]] <- new_future_climate_data$air_temperature
+        }
+        future_climate_data[[var]] <- new_future_climate_data[[var]]
+      }
+    }
     
     # Pull out each meteorological variable
-    # as.data.frame(colMeans(as.data.frame(values(future_climate_data$precipitation))));
     precip <- global(future_climate_data$precipitation, fun = "mean", na.rm = TRUE); colnames(precip) <- c('pr')
     precip <- precip %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
-    temp <- global(future_climate_data$air_temperature, fun = "mean", na.rm = TRUE); colnames(temp) <- c('temp')
-    temp <- temp %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Run)
-    temp$temp <- temp$temp - 273.15
-    rsds <- global(future_climate_data$surface_downwelling_shortwave_flux_in_air, fun = "mean", na.rm = TRUE); colnames(rsds) <- c('srad')
-    rsds <- rsds %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    tmmn <- global(future_climate_data$tasmin, fun = "mean", na.rm = TRUE); colnames(tmmn) <- c('tmmn')
+    tmmn <- tmmn %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    tmmx <- global(future_climate_data$tasmax, fun = "mean", na.rm = TRUE); colnames(tmmx) <- c('tmmx')
+    tmmx <- tmmx %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    tmmx$tmmx <- tmmx$tmmx - 273.15; tmmn$tmmn <- tmmn$tmmn - 273.15
+    srad <- global(future_climate_data$surface_downwelling_shortwave_flux_in_air, fun = "mean", na.rm = TRUE); colnames(srad) <- c('srad')
+    srad <- srad %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
     vpd <- global(future_climate_data$vpd, fun = "mean", na.rm = TRUE); colnames(vpd) <- c('vpd')
     vpd <- vpd %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
     vas <- global(future_climate_data$northward_wind, fun = "mean", na.rm = TRUE); colnames(vas) <- c('vas')
@@ -286,25 +312,22 @@ get_maca_data_area <- function(aoi, SiteID_FileName){
     uas <- global(future_climate_data$eastward_wind, fun = "mean", na.rm = TRUE); colnames(uas) <- c('uas')
     uas <- uas %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
     
-    tmmx <- temp[1:(nrow(temp) %/% 2), ]
-    tmmn <- temp[(nrow(temp) %/% 2 + 1):nrow(temp), ]
-    tmmx <- tmmx %>% select(-Variable) %>% rename(tmmx = temp); tmmn <- tmmn %>% select(-Variable) %>% rename(tmmn = temp)
-    
-    # Merge
-    #future_climate <- Reduce(function(x, y) merge(x, y, by = c('Date', 'GCM', 'RCP'), all = TRUE), list(precip, tmmx, tmmn, rsds, vpd, vas, uas))
-    future_climate <- list(precip, tmmx, tmmn, rsds, vpd, vas, uas) %>% reduce(full_join, by = c("Date", "GCM", "RCP"))
-    
+    # Merge and forcibly correct discrepancies in order
+    future_climate <- precip %>% select(-pr) %>% arrange(Date, tolower(GCM), RCP)
+    future_climate$pr <- precip$pr; future_climate$tmmx <- tmmx$tmmx; future_climate$tmmn <- tmmn$tmmn; future_climate$srad <- srad$srad; future_climate$vpd <- vpd$vpd; future_climate$vas <- vas$vas; future_climate$uas <- uas$uas
+
     # Clean data
     future_climate$vs <- sqrt(future_climate$vas^2 + future_climate$uas^2)
     future_climate <- future_climate %>% mutate(projection = paste0(GCM, '.', RCP))
     future_climate <- future_climate %>% select(-vas, -uas, -GCM, -RCP)
     future_climate <- future_climate[,c('projection','Date','pr','srad','tmmn','tmmx','vs','vpd')]
+    future_climate$Date <- as.Date(future_climate$Date)
     
     # Save
     write.csv(future_climate, file = here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_area.csv', sep='_')), row.names = FALSE)
   } else {
     future_climate <- read.csv(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_area.csv', sep='_')))
-    #may or may not need this: future_climate$Date <- as.Date(future_climate$Date, '%d/%m/%Y')
+    future_climate$Date <- as.Date(future_climate$Date)
   }
   return(future_climate)
 }
