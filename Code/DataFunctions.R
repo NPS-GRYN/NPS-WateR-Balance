@@ -96,18 +96,18 @@ get_gage_data <- function(GageSiteID, incompleteMonths, fillLeapDays, dataPath){
       dplyr::mutate(CFS = Q*35.314666212661) # convert Q from m3/s to cfs
     write.csv(DailyStream, file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, sep = "_"), ".csv")))
   }else{DailyStream<- read.csv(file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, sep = "_"), ".csv")))}
-  DailyStream$Date <- as.Date(DailyStream$Date)
+  DailyStream$date <- as.Date(DailyStream$Date); DailyStream <- DailyStream %>% select(-Date)
   
   # Generate dataframe with complete dates, fill in missing data with NA
-  DailyStream <- left_join(data.frame(Date = seq(min(DailyStream$Date), max(DailyStream$Date), by = "day")), 
-                           DailyStream, by = "Date")
-  DailyStream$waterYear <- sapply(DailyStream$Date, get_water_year)
+  DailyStream <- left_join(data.frame(date = seq(min(DailyStream$date), max(DailyStream$date), by = "day")), 
+                           DailyStream, by = "date")
+  DailyStream$waterYear <- sapply(DailyStream$date, get_water_year)
   
   # Remove leap days from streamflow data according to user input
   # check this code
   if(!fillLeapDays){
-    DailyStream$Date<- ymd(DailyStream$Date)
-    DailyStream <- DailyStream[!(format(DailyStream$Date,"%m") == "02" & format(DailyStream$Date, "%d") == "29"), , drop = FALSE]
+    DailyStream$date<- ymd(DailyStream$date)
+    DailyStream <- DailyStream[!(format(DailyStream$date,"%m") == "02" & format(DailyStream$date, "%d") == "29"), , drop = FALSE]
   }
   
   # Extract square mileage of the watershed from the EGRET package
@@ -115,11 +115,11 @@ get_gage_data <- function(GageSiteID, incompleteMonths, fillLeapDays, dataPath){
   sqmi <<- obj$drain_area_va
   
   # Aggregate gage discharge data daily and convert from cfs to mm 
-  meas_flow_daily <- data.frame(Date = DailyStream$Date, MeasMM = DailyStream$CFS*28316847*86400/(2590000000000 * sqmi))
-  meas_flow_daily_xts <- xts(meas_flow_daily$MeasMM, order.by = ymd(meas_flow_daily$Date))
+  meas_flow_daily <- data.frame(date = DailyStream$date, MeasMM = DailyStream$CFS*28316847*86400/(2590000000000 * sqmi))
+  meas_flow_daily_xts <- xts(meas_flow_daily$MeasMM, order.by = ymd(meas_flow_daily$date))
   
   # Aggregate gage discharge data monthly
-  meas_flow_daily$YrMon<- format(as.Date(meas_flow_daily$Date, format="%Y-%m-%d"),"%Y-%m")
+  meas_flow_daily$YrMon<- format(as.Date(meas_flow_daily$date, format="%Y-%m-%d"),"%Y-%m")
   if(incompleteMonths){
     #sum all months of Measured Discharge, including incomplete months
     meas_flow_mon <- aggregate(meas_flow_daily$MeasMM, by=list(meas_flow_daily$YrMon), FUN=sum)
@@ -144,7 +144,6 @@ get_gage_data <- function(GageSiteID, incompleteMonths, fillLeapDays, dataPath){
 
 
 # Scrape GridMET meteorological data and clean
-# CHANGE DATE to uppercase
 # Args:
 # Returns: 
 #   Dataframe with meteorological data at daily time scale
@@ -196,12 +195,12 @@ get_daymet_data <- function(SiteID_FileName, startY, endY, lat, lon, aoi, dataPa
   
   # Fill leap days according to user input
   # check this code - seems really unwieldy/possibly could be condensed
-  HasLeapDays <- data.frame(Date = as.Date(seq(0, (nrow(DailyClimData)-1), 1),
+  HasLeapDays <- data.frame(date = as.Date(seq(0, (nrow(DailyClimData)-1), 1),
                                            origin = ymd(paste(startY+1, startM, startD))))
-  NoLeapDays<- HasLeapDays[!(format(HasLeapDays$Date,"%m") == "02" & format(HasLeapDays$Date, "%d") == "29"), , drop = FALSE]
+  NoLeapDays<- HasLeapDays[!(format(HasLeapDays$date,"%m") == "02" & format(HasLeapDays$date, "%d") == "29"), , drop = FALSE]
   DifRows = nrow(HasLeapDays)-nrow(NoLeapDays)
   LastDate = NoLeapDays[nrow(NoLeapDays),]
-  LostDates <- data.frame(Date = as.Date(seq(1, DifRows, 1), origin = LastDate))
+  LostDates <- data.frame(date = as.Date(seq(1, DifRows, 1), origin = LastDate))
   NoLeapDays<- rbind(NoLeapDays, LostDates)
   row.names(NoLeapDays)<- NULL
   DailyClimData$date<- ymd(NoLeapDays$Date)
@@ -248,7 +247,7 @@ get_maca_point <- function(lat, lon, SiteID_FileName){
     precip<-NULL; tasmin<-NULL; tasmax<-NULL; rsds<-NULL; vpd<-NULL; vas<-NULL; uas<-NULL 
     for(i in 2:length(colnames(future_climate_data))){
       split_colnames <- strsplit(colnames(future_climate_data[i]), "_")
-      combine <- data.frame(Date=future_climate_data[,1], GCM=split_colnames[[1]][2], RCP=split_colnames[[1]][4],
+      combine <- data.frame(date=future_climate_data[,1], GCM=split_colnames[[1]][2], RCP=split_colnames[[1]][4],
                             var=future_climate_data[,i])
       if(split_colnames[[1]][1] == 'pr') {precip <- rbind(precip, combine)}
       if(split_colnames[[1]][1] == 'tasmin') {tasmin <- rbind(tasmin, combine)}
@@ -258,23 +257,23 @@ get_maca_point <- function(lat, lon, SiteID_FileName){
       if(split_colnames[[1]][1] == 'vas') {vas <- rbind(vas, combine)}
       if(split_colnames[[1]][1] == 'uas') {uas <- rbind(uas, combine)}
     }
-    colnames(precip) <- c('Date','GCM','RCP','pr'); colnames(tasmin) <- c('Date','GCM','RCP','tmmn'); colnames(tasmax) <- c('Date','GCM','RCP','tmmx')
-    colnames(rsds) <- c('Date','GCM','RCP','srad'); colnames(vpd) <- c('Date','GCM','RCP','vpd'); colnames(vas) <- c('Date','GCM','RCP','vas'); colnames(uas) <- c('Date','GCM','RCP','uas')
+    colnames(precip) <- c('date','GCM','RCP','pr'); colnames(tasmin) <- c('date','GCM','RCP','tmmn'); colnames(tasmax) <- c('date','GCM','RCP','tmmx')
+    colnames(rsds) <- c('date','GCM','RCP','srad'); colnames(vpd) <- c('date','GCM','RCP','vpd'); colnames(vas) <- c('date','GCM','RCP','vas'); colnames(uas) <- c('date','GCM','RCP','uas')
     
-    future_climate <- Reduce(function(x, y) merge(x, y, by = c('Date', 'GCM', 'RCP'), all = TRUE), list(precip, tasmin, tasmax, rsds, vpd, vas, uas))
+    future_climate <- Reduce(function(x, y) merge(x, y, by = c('date', 'GCM', 'RCP'), all = TRUE), list(precip, tasmin, tasmax, rsds, vpd, vas, uas))
     
     future_climate$tmmn <- future_climate$tmmn - 273.15; future_climate$tmmx <- future_climate$tmmx - 273.15
     future_climate$vs <- sqrt(future_climate$vas^2 + future_climate$uas^2)
     future_climate <- future_climate %>% mutate(projection = paste0(GCM, '.', RCP))
     future_climate <- future_climate %>% select(-vas, -uas, -GCM, -RCP)
-    future_climate <- future_climate[,c('projection','Date','pr','srad','tmmn','tmmx','vs','vpd')]
-    future_climate$Date <- as.Date(future_climate$Date)
+    future_climate <- future_climate[,c('projection','date','pr','srad','tmmn','tmmx','vs','vpd')]
+    future_climate$date <- as.Date(future_climate$date)
     
     # Save
     write.csv(future_climate, file = here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_point.csv', sep='_')), row.names = FALSE)
   } else {
     future_climate <- read.csv(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_point.csv', sep='_')))
-    future_climate$Date <- as.Date(future_climate$Date, '%d/%m/%Y')
+    future_climate$date <- as.Date(future_climate$date)
   }
   return(future_climate)
 }
@@ -311,37 +310,37 @@ get_maca_data_area <- function(aoi, SiteID_FileName){
     
     # Pull out each meteorological variable
     precip <- global(future_climate_data$precipitation, fun = "mean", na.rm = TRUE); colnames(precip) <- c('pr')
-    precip <- precip %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    precip <- precip %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
     tmmn <- global(future_climate_data$tasmin, fun = "mean", na.rm = TRUE); colnames(tmmn) <- c('tmmn')
-    tmmn <- tmmn %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    tmmn <- tmmn %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
     tmmx <- global(future_climate_data$tasmax, fun = "mean", na.rm = TRUE); colnames(tmmx) <- c('tmmx')
-    tmmx <- tmmx %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    tmmx <- tmmx %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
     tmmx$tmmx <- tmmx$tmmx - 273.15; tmmn$tmmn <- tmmn$tmmn - 273.15
     srad <- global(future_climate_data$surface_downwelling_shortwave_flux_in_air, fun = "mean", na.rm = TRUE); colnames(srad) <- c('srad')
-    srad <- srad %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    srad <- srad %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
     vpd <- global(future_climate_data$vpd, fun = "mean", na.rm = TRUE); colnames(vpd) <- c('vpd')
-    vpd <- vpd %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    vpd <- vpd %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
     vas <- global(future_climate_data$northward_wind, fun = "mean", na.rm = TRUE); colnames(vas) <- c('vas')
-    vas <- vas %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    vas <- vas %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
     uas <- global(future_climate_data$eastward_wind, fun = "mean", na.rm = TRUE); colnames(uas) <- c('uas')
-    uas <- uas %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "Date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    uas <- uas %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
     
     # Merge and forcibly correct discrepancies in order
-    future_climate <- precip %>% select(-pr) %>% arrange(Date, tolower(GCM), RCP)
+    future_climate <- precip %>% select(-pr) %>% arrange(date, tolower(GCM), RCP)
     future_climate$pr <- precip$pr; future_climate$tmmx <- tmmx$tmmx; future_climate$tmmn <- tmmn$tmmn; future_climate$srad <- srad$srad; future_climate$vpd <- vpd$vpd; future_climate$vas <- vas$vas; future_climate$uas <- uas$uas
 
     # Clean data
     future_climate$vs <- sqrt(future_climate$vas^2 + future_climate$uas^2)
     future_climate <- future_climate %>% mutate(projection = paste0(GCM, '.', RCP))
     future_climate <- future_climate %>% select(-vas, -uas, -GCM, -RCP)
-    future_climate <- future_climate[,c('projection','Date','pr','srad','tmmn','tmmx','vs','vpd')]
-    future_climate$Date <- as.Date(future_climate$Date)
+    future_climate <- future_climate[,c('projection','date','pr','srad','tmmn','tmmx','vs','vpd')]
+    future_climate$date <- as.Date(future_climate$date)
     
     # Save
     write.csv(future_climate, file = here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_area.csv', sep='_')), row.names = FALSE)
   } else {
     future_climate <- read.csv(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_area.csv', sep='_')))
-    future_climate$Date <- as.Date(future_climate$Date)
+    future_climate$date <- as.Date(future_climate$date)
   }
   return(future_climate)
 }
@@ -365,7 +364,7 @@ get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
   # Return file if it exists
   if(file.exists(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))){
     future_wb <- read.csv(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))
-    future_wb$Date <- as.Date(future_wb$Date)
+    future_wb$date <- as.Date(future_wb$date)
     # not sure if I need this
     #future_wb$adj_runoff<- get_adj_runoff(future_wb$runoff, gw_add = gw_add, vfm = vfm)
     return(future_wb)
@@ -431,14 +430,14 @@ get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
 
 
 # Pull gridded water balance data from a file provided by Mike Tercek
-get_conus_wb_mike <- function(SiteID_FileName, dataPath, filename){
+get_conus_wb_direct <- function(SiteID_FileName, dataPath, filename){
   if(file.exists(filename)){
     future_wb_conus <- read.csv(filename)
     
     # Clean: fix date, convert to mm, fix column names
-    future_wb_conus$Date <- as.Date(future_wb_conus$Date)
-    future_wb_conus<-cbind(future_wb_conus[,c("Date","GCM")], 25.4*(future_wb_conus[,c(which(colnames(future_wb_conus)=="Deficit.in"):ncol(future_wb_conus))]))
-    colnames(future_wb_conus)<- c("Date", "projection", "Deficit", "AET", "soil_water", "runoff", "rain", "accumswe", "PET")
+    future_wb_conus$date <- as.Date(future_wb_conus$date)
+    future_wb_conus<-cbind(future_wb_conus[,c("date","GCM")], 25.4*(future_wb_conus[,c(which(colnames(future_wb_conus)=="Deficit.in"):ncol(future_wb_conus))]))
+    colnames(future_wb_conus)<- c("date", "projection", "Deficit", "AET", "soil_water", "runoff", "rain", "accumswe", "PET")
     #future_wb<-subset(future_wb, projection !="MIROC-ESM-CHEM.rcp85")   # drop "MIROC-ESM-CHEM.rcp85" because it doesn't have an associated RCP 4.5  
     
     # adjust for ground water addition and volume forcing multiplier
@@ -469,7 +468,7 @@ get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileNa
     # Check if request was successful
     if(response$status_code == 200){
       ET <- data.frame(fromJSON(content(response, as = "text", encoding = "UTF-8")))
-      colnames(ET) <- c('Date', 'Meas ET')
+      colnames(ET) <- c('date', 'Meas ET')
       write.csv(ET, file_path)
     } else{
       print(paste('No', interval, 'OpenET data for that region or time period. Optimization cannot occur.')); stop()

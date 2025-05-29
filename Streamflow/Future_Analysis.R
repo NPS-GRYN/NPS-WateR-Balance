@@ -28,47 +28,48 @@ gcm_list <- gcm_list[!gcm_list %in% low_skill_models$GCM]
 
 
 ### Use Mike Tercek's pre-generated gridded CONUS water balance model for future projections ###
-future_wb_conus <- get_conus_wb(SiteID_FileName, lat, lon, endY, 2099)
-
-### Use the pre-generated gridded CONUS WB model output provided DIRECTLY by Mike Tercek ###
-# if Mike's website is down
-filename <- "\\Users\\mcburns\\OneDrive - DOI\\water-balance\\Data\\LittleRiver\\littleriver_water_balance_future.csv"
-if(is.na(future_wb_conus)){
-  future_wb_conus <- get_conus_wb_mike(SiteID_FileName, dataPath, filename)
+if(!calcFutureWB){
+  # Access provided file
+  if(file.exists(filename_future_wb)) {
+    future_wb_conus <- get_conus_wb_direct(SiteID_FileName, dataPath, filename_future_wb)
+  } else{
+    # Pull directly from website
+    future_wb_conus <- get_conus_wb(SiteID_FileName, lat, lon, endY, 2099)
+  }
+  
+  # If neither version can be accessed, calculate water balance
+  if(is.na(future_wb_conus)){
+    calcFutureWB <- TRUE
+  }
 }
 
-# If neither version of the gridded CONUS water balance model exists, calculate water balance
-# edit if statement?
-if(length(future_wb_conus)==1){
-  calcFutureWB <- TRUE
-}
-
- 
 
 
 ### Re-run water balance model to generate future projections ###
 # has the name projection been changed?
-if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))){
-  # Get future climate data
-  if(point_location) {future_climate <- get_maca_point(lat, lon, SiteID_FileName)
-  } else future_climate <- get_maca_data_area(aoi, SiteID_FileName)
-
-  # Run water balance code for each future projection
-  future_wb_calc <- NULL
-  for(projection in unique(future_climate$projection)){
-    print(projection)
-    ClimData <- future_climate %>% filter(projection==projection) %>% select(-projection)
-    DailyWB_future <- WB(ClimData, gw_add, vfm, jrange, hock, hockros, dro, mondro, aspect, slope,
-                         shade.coeff, jtemp, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
-    DailyWB_future <- cbind(projection, DailyWB_future)  
-    future_wb_calc <- rbind(future_wb_calc, DailyWB_future)
+if(calcFutureWB){
+  if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))){
+    # Get future climate data
+    if(point_location) {future_climate <- get_maca_point(lat, lon, SiteID_FileName)
+    } else future_climate <- get_maca_data_area(aoi, SiteID_FileName)
+    
+    # Run water balance code for each future projection
+    future_wb_calc <- NULL
+    for(projection in unique(future_climate$projection)){
+      print(projection)
+      ClimData <- future_climate %>% filter(projection==projection) %>% select(-projection)
+      DailyWB_future <- WB(ClimData, gw_add, vfm, jrange, hock, hockros, dro, mondro, aspect, slope,
+                           shade.coeff, jtemp, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
+      DailyWB_future <- cbind(projection, DailyWB_future)  
+      future_wb_calc <- rbind(future_wb_calc, DailyWB_future)
+    }
+    # Save calculated WB
+    write.csv(future_wb_calc, here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')), row.names=FALSE)
+  } else{
+    # Read in calculated WB 
+    future_wb_calc <- read.csv(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))
+    future_wb_calc$date <- as.Date(future_wb_calc$date, '%m/%d/%Y')
   }
-  # Save calculated WB
-  write.csv(future_wb_calc, here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')), row.names=FALSE)
-} else{
-  # Read in calculated WB 
-  future_wb_calc <- read.csv(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))
-  future_wb_calc$Date <- as.Date(future_wb_calc$Date, '%m/%d/%Y')
 }
 
 
@@ -79,16 +80,16 @@ if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, end
 if(!is.na(future_wb_conus)){
   model_run = 'HadGEM2-CC365.rcp45'; yr = 2060
   if(make_plots){
-    plot_aet <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=AET), col='black')+
-      geom_line(data=future_wb_calc %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=AET), col='red')+
+    plot_aet <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(date)==yr), aes(x=date, y=AET), col='black')+
+      geom_line(data=future_wb_calc %>% filter(projection==model_run & year(date)==yr), aes(x=date, y=AET), col='red')+
       labs(x='Date',y='AET [mm]', title='Actual Evapotranspiration') +
       theme(legend.position = "none") + nps_theme()
-    plot_d <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=Deficit), col='black')+
-      geom_line(data=future_wb_calc %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=D), col='red')+
+    plot_d <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(date)==yr), aes(x=date, y=Deficit), col='black')+
+      geom_line(data=future_wb_calc %>% filter(projection==model_run & year(date)==yr), aes(x=date, y=D), col='red')+
       labs(x='Date',y='Deficit [mm]', title='Deficit') +
       theme(legend.position = "none") + nps_theme()
-    plot_run <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(Date)==yr), aes(x=Date, y=adj_runoff, col='Gridded WB'))+
-      geom_line(data=future_wb_calc %>% filter(projection==model_run& year(Date)==yr), aes(x=Date, y=adj_runoff, col='Calculated WB'))+
+    plot_run <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(date)==yr), aes(x=date, y=adj_runoff, col='Gridded WB'))+
+      geom_line(data=future_wb_calc %>% filter(projection==model_run& year(date)==yr), aes(x=date, y=adj_runoff, col='Calculated WB'))+
       labs(x='Date',y='Adjusted Runoff [mm]', title='Adjusted Runoff') +  
       scale_color_manual(values = c("Gridded WB"="black", "Calculated WB"="red"), name="WB Projections") + nps_theme()
     
@@ -126,7 +127,7 @@ for (j in 1:length(gcms)){
   DailyDrainFuture <- Drain(data, q0, qa, qb, s0, sa, sb, v0, va, vb)
   
   # Save streamflow projection to futures dataframe
-  drainage_qsvt <- cbind(gcms[j], fut_ro$Date, DailyDrainFuture)
+  drainage_qsvt <- cbind(gcms[j], fut_ro$date, DailyDrainFuture)
   colnames(drainage_qsvt)[] <- c("projection", "date", "adj_runoff", "quick", "slow", "veryslow", "total")
   futures <-rbind(futures, drainage_qsvt)
 }

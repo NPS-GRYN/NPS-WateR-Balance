@@ -170,10 +170,10 @@ line_data <- data.frame(intercept = coef(model)[seq(1, length(coef(model)), by =
 if(make_plots){
   jpeg(file=paste0(outLocationPath, "/", "Historical_QuantileRegression_Scatter.jpg"), width=800, height=500)
   plot <- ggplot(hist_flow_daily, aes(Mod,Meas)) + geom_point() +   geom_abline(data = line_data, aes(intercept = intercept, slope = slope, color = factor(tau)), linewidth=1.1) +
-    scale_color_manual(values = colors, labels = c(0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99), name = "Quantiles") +
+    #scale_color_manual(values = colors, labels = c(0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99), name = "Quantiles") +
     theme(legend.position = "right")+ scale_x_continuous(limits = c(1, NA)) + labs(title="Quantile Regression of Daily Historical Streamflow",y="Measured Streamflow", x="Modeled Streamflow")+
     scale_color_manual(values = colors, labels = c(bquote(bold("0.01:") * " -0.047"), bquote(bold("0.1:")*" 0.132"), bquote(bold("0.25:")*" 0.395"), bquote(bold("0.5:")*" 0.624"), bquote(bold("0.75:")*" 0.602"), bquote(bold("0.9:")*" 0.323"), bquote(bold("0.99:")*" -2.09")), name = "Pseudo R2 by Quantile") + 
     nps_theme() 
-  plot
+  print(plot)
   dev.off()
 }

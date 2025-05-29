@@ -11,6 +11,7 @@
 # clean up, generally make user friendly
 # add info on how to run to the user manual
 # add code for watershed averages, not just centroids
+# CONSISTENCY IN NAMING THINGS: projection and date are all lowercase
 # ---------------------------------------------------------------------
 
 
@@ -20,17 +21,15 @@
 
 
 #######################################################################
-### Load libraries ###
+### Load libraries and function files ###
 library('here'); lib_install <- FALSE
-
-### Source in function files ###
 setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setwd(here())
 
 
 #######################################################################
 ### Set user-defined variables ###
 PETMethod = "Oudin" 
-optimization = FALSE 
+optimization = TRUE 
 delayStart = FALSE 
 NonZeroDrainInitCoeff = FALSE
 incompleteMonths = FALSE 
@@ -38,7 +37,7 @@ GridMET = TRUE
 fillLeapDays = TRUE 
 historical_analysis = TRUE
 future_analysis = TRUE
-calcFutureWB = FALSE  # TRUE to re-run entire water balance model for future; FALSE to use pre-existing CONUS water balance projections from a Mike Tercek spreadsheet
+calcFutureWB = TRUE  # TRUE to re-run entire water balance model for future; FALSE to use pre-existing CONUS water balance projections from a Mike Tercek spreadsheet
 userSetJTemp = FALSE 
 make_plots = TRUE 
 provide_coords = FALSE # if true, user provides lat/lon coords. if false, lat/lon coords are pulled from centroid of watershed with given gage id
@@ -46,11 +45,12 @@ flow_components = 3  # change the number of components that characterize the flo
 percent_skill_cutoff = 0.1 # only include a certain percentage of GCMs, ranked by skill. metric is 0-1
 point_location = TRUE  # if TRUE, pull all meteorological data for a single point (center of watershed). if FALSE, pull data for entire watershed and take average (this takes longer)
 FolderName = "optim" 
+filename_future_wb = "\\Users\\mcburns\\OneDrive - DOI\\water-balance\\Data\\LittleRiver\\littleriver_water_balance_future.csv"  # file name for Mike provided future WB
 
 ### Define watershed ###
 # centroid of watershed
-SiteID = "Cataloochee"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
-GageSiteID <- '03460000'                  #define stream gage location (RWC: "11460151")
+SiteID = "Wet Beaver Creek"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
+GageSiteID <- '09505200'                  #define stream gage location (RWC: "11460151")
 if(provide_coords) lat = 37.9; lon = -122.59 
 
 ### Define time period for historical analysis ###

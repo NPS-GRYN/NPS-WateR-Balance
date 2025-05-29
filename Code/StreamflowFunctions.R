@@ -54,7 +54,7 @@ calc_vb = function(qa, qb, sa, sb, va){
 #   lat, lon: Latitude and longitude of site, in degrees
 # Returns:
 #   DailyWB dataframe with @@
-WB= function(DailyWB, gw_add, vfm , jrange ,hock ,hockros,dro,mondro , aspect, 
+WB <- function(DailyWB, gw_add, vfm , jrange ,hock ,hockros,dro,mondro , aspect, 
              slope, shade.coeff, jtemp ,SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon){
   #add month and day of year columns, GridMet comes with a date column, but the functions below need month and day of year
   DailyWB$month<- as.numeric(format(as.Date(DailyWB$date, format="%Y-%m-%d"),"%m"))
@@ -242,11 +242,11 @@ WB_Optim_AET = function(parms, Soil.Init, Snowpack.Init, T.Base, PETMethod, Dail
                 slope, shade.coeff, jtemp, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
   
   # Aggregate WB AET monthly 
-  Mod <- DailyWB[,c("date","AET")]; colnames(Mod) <- c("Date", "Mod AET")
-  #Mod$YrMon <- format(as.Date(Mod$date, format="%Y-%m-%d"),"%Y-%m"); meas_aet_mon$Date <- format(as.Date(meas_aet_mon$Date),"%Y-%m")
+  Mod <- DailyWB[,c("date","AET")]; colnames(Mod) <- c("date", "Mod AET")
+  #Mod$YrMon <- format(as.Date(Mod$date, format="%Y-%m-%d"),"%Y-%m"); meas_aet_mon$date <- format(as.Date(meas_aet_mon$date),"%Y-%m")
   #ModAgg <- aggregate(Mod$AET, by=list(Mod$YrMon), FUN=sum)
-  #colnames(ModAgg) <- c("Date", "Mod AET")
-  MeasMod <- dplyr::full_join(meas_aet_mon, Mod, by = join_by(Date))
+  #colnames(ModAgg) <- c("date", "Mod AET")
+  MeasMod <- dplyr::full_join(meas_aet_mon, Mod, by = join_by(date))
   colnames(MeasMod)<- c("YrMon", "Meas","Mod")
   MeasMod<- MeasMod[complete.cases(MeasMod),]
   
