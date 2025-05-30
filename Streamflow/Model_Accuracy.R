@@ -177,3 +177,21 @@ if(make_plots){
   print(plot)
   dev.off()
 }
+
+
+### KS test to evaluate distributions ###
+# EDIT PLOTS - do not work currently 
+# daily
+meas <- coredata(hist_flow_daily$Meas); mod <- coredata(hist_flow_daily$Mod)
+daily_ks <- ks.test(mod, meas)
+if(make_plots){
+  plot <- ggplot() + stat_ecdf(data=mod)
+}
+
+# monthly
+mod <- MeasMod$Mod; meas <- MeasMod$Meas
+mon_ks <- ks.test(mod, meas)
+
+# annual
+mod <- coredata(hist_flow_ann$Mod); meas <- coredata(hist_flow_ann$Meas)
+ann_ks <- ks.test(mod, meas)
