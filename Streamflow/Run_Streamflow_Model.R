@@ -29,7 +29,7 @@ setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setw
 #######################################################################
 ### Set user-defined variables ###
 PETMethod = "Oudin" 
-optimization = TRUE 
+optimization = FALSE 
 delayStart = FALSE 
 NonZeroDrainInitCoeff = FALSE
 incompleteMonths = FALSE 
@@ -49,8 +49,8 @@ filename_future_wb = "\\Users\\mcburns\\OneDrive - DOI\\water-balance\\Data\\Lit
 
 ### Define watershed ###
 # centroid of watershed
-SiteID = "Wet Beaver Creek"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
-GageSiteID <- '09505200'                  #define stream gage location (RWC: "11460151")
+SiteID = "Little River"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
+GageSiteID <- '03497300'                  #define stream gage location (RWC: "11460151")
 if(provide_coords) lat = 37.9; lon = -122.59 
 
 ### Define time period for historical analysis ###

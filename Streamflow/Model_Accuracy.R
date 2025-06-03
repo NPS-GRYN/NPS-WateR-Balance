@@ -84,27 +84,27 @@ if(make_plots){
 # trend analysis assumes p value of < 0.05 is significant
 if(make_plots){
   meas_mk <- MannKendall(hist_flow_ann$Meas)
-  if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
-  }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+  if(meas_mk$sl <= 0.05){label_meas <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
+  }else{label_meas <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
   
   plot_meas <- ggplot(hist_flow_ann, aes(x = index(Meas), y = Meas)) + geom_line(aes(color = 'Measured'), linewidth=1) +
-    geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
     labs(x = "Date", y = "Annual Streamflow (mm)", title = "Annual Measured Streamflow", color='') +
     nps_theme() + theme(legend.position = 'bottom') +
     scale_color_manual(values = c("Measured" = "black", "Trend" = "red")) +
-    annotate("text", x = max(index(hist_flow_ann$Meas)), y = max(hist_flow_ann$Meas), label = label, color = "black", hjust = 1, vjust = 1)
+    annotate("text", x = max(index(hist_flow_ann$Meas)), y = max(hist_flow_ann$Meas), label = label_meas, color = "black", hjust = 1, vjust = 1)
   plot_meas
   
   mod_mk <- MannKendall(hist_flow_ann$Mod)
-  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', mod_mk$sl)
-  }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', mod_mk$sl)}
+  if(mod_mk$sl <= 0.05){label_mod <- sprintf('Trend: Significant \n p-value: %.2f', mod_mk$sl)
+  }else{label_mod <- sprintf('Trend: Not significant \n p-value: %.2f', mod_mk$sl)}
   
   plot_mod <- ggplot(hist_flow_ann, aes(x = index(Mod), y = Mod)) + geom_line(aes(color = 'Modeled'), linewidth=1) +
-    geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
     labs(x = "Date", y = "Annual Streamflow (mm)", title = "Annual Modeled Streamflow", color='') +
     nps_theme() + theme(legend.position = 'bottom') +
     scale_color_manual(values = c("Modeled" = "black", "Trend" = "red")) +
-    annotate("text", x = max(index(hist_flow_ann$Mod)), y = max(hist_flow_ann$Mod), label = label, color = "black", hjust = 1, vjust = 1)
+    annotate("text", x = max(index(hist_flow_ann$Mod)), y = max(hist_flow_ann$Mod), label = label_mod, color = "black", hjust = 1, vjust = 1)
   plot_mod
   
   jpeg(file=paste0(outLocationPath, "/", "Historical_Measured_Modeled_Trends.jpg"), width=1000, height=400)
@@ -179,19 +179,49 @@ if(make_plots){
 }
 
 
-### KS test to evaluate distributions ###
-# EDIT PLOTS - do not work currently 
+### KS tests and ECDF plots of distributions ###
 # daily
 meas <- coredata(hist_flow_daily$Meas); mod <- coredata(hist_flow_daily$Mod)
 daily_ks <- ks.test(mod, meas)
+if(daily_ks$p.value <= 0.05){label <- sprintf('Difference: Significant \n p-value: %.2f', daily_ks$p.value)
+}else{label <- sprintf('Difference: Not significant \n p-value: %.2f', daily_ks$p.value)}
 if(make_plots){
-  plot <- ggplot() + stat_ecdf(data=mod)
+  jpeg(file=paste0(outLocationPath, "/", "Historical_Measured_Modeled_ECDF_Daily.jpg"), width=500, height=300)
+  plot <- ggplot() + stat_ecdf(data=mod, aes(x=Mod, color='Modeled'), linewidth=1) + 
+    stat_ecdf(data=meas, aes(x=Meas, color='Measured'), linewidth=1) + 
+    labs(title='Daily ECDF', x='Streamflow (mm)', y='Cumulative Frequency', color='') +
+    scale_color_manual(values=c('Modeled'='red', 'Measured'='black')) + scale_x_log10() + 
+    annotate("text", x = max(meas), y = min(.15, na.rm=TRUE), label = label, color = "black", hjust = 1, vjust = 1) + 
+    nps_theme()
+  print(plot); dev.off()
 }
 
 # monthly
-mod <- MeasMod$Mod; meas <- MeasMod$Meas
-mon_ks <- ks.test(mod, meas)
+mon_ks <- ks.test(MeasMod$Mod, MeasMod$Meas)
+if(mon_ks$p.value <= 0.05){label <- sprintf('Difference: Significant \n p-value: %.2f', mon_ks$p.value)
+}else{label <- sprintf('Difference: Not significant \n p-value: %.2f', mon_ks$p.value)}
+if(make_plots){
+  jpeg(file=paste0(outLocationPath, "/", "Historical_Measured_Modeled_ECDF_Monthly.jpg"), width=500, height=300)
+  plot <- ggplot() + stat_ecdf(data=MeasMod, aes(x=Mod, color='Modeled'), linewidth=1) + 
+    stat_ecdf(data=MeasMod, aes(x=Meas, color='Measured'), linewidth=1) + 
+    labs(title='Monthly ECDF', x='Streamflow (mm)', y='Cumulative Frequency', color='') +
+    scale_color_manual(values=c('Modeled'='red', 'Measured'='black')) + scale_x_log10() + 
+    annotate("text", x = max(meas), y = min(.15, na.rm=TRUE), label = label, color = "black", hjust = 1, vjust = 1) + 
+    nps_theme()
+  print(plot); dev.off()
+}
 
 # annual
-mod <- coredata(hist_flow_ann$Mod); meas <- coredata(hist_flow_ann$Meas)
-ann_ks <- ks.test(mod, meas)
+ann_ks <- ks.test(hist_flow_ann$Mod, hist_flow_ann$Meas)
+if(ann_ks$p.value <= 0.05){label <- sprintf('Difference: Significant \n p-value: %.2f', ann_ks$p.value)
+}else{label <- sprintf('Difference: Not significant \n p-value: %.2f', ann_ks$p.value)}
+if(make_plots){
+  jpeg(file=paste0(outLocationPath, "/", "Historical_Measured_Modeled_ECDF_Annual.jpg"), width=500, height=300)
+  plot <- ggplot() + stat_ecdf(data=hist_flow_ann, aes(x=Mod, color='Modeled'), linewidth=1) + 
+    stat_ecdf(data=hist_flow_ann, aes(x=Meas, color='Measured'), linewidth=1) + 
+    labs(title='Annual ECDF', x='Streamflow (mm)', y='Cumulative Frequency', color='') +
+    scale_color_manual(values=c('Modeled'='red', 'Measured'='black')) + scale_x_log10() + 
+    annotate("text", x = max(meas), y = min(.15, na.rm=TRUE), label = label, color = "black", hjust = 1, vjust = 1) + 
+    nps_theme()
+  print(plot); dev.off()
+}

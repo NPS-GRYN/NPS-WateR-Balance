@@ -38,7 +38,7 @@ if(!calcFutureWB){
   }
   
   # If neither version can be accessed, calculate water balance
-  if(is.na(future_wb_conus)){
+  if(anyNA(future_wb_conus)){
     calcFutureWB <- TRUE
   }
 }
@@ -77,7 +77,7 @@ if(calcFutureWB){
 ### Compare the two future water balance projections, just for fun ###
 # plot AET, deficit, adj runoff for a sample year and a sample model
 # edit if statement
-if(!is.na(future_wb_conus)){
+if(exists("future_wb_conus") & exists("future_wb_calc")){
   model_run = 'HadGEM2-CC365.rcp45'; yr = 2060
   if(make_plots){
     plot_aet <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(date)==yr), aes(x=date, y=AET), col='black')+
@@ -115,29 +115,35 @@ if(calcFutureWB){
 }
 
 # Run IHACRES model for each future projection
-gcms<-unique(future_wb$projection)
-futures <- NULL
-for (j in 1:length(gcms)){
-  # Subset one model
-  fut_ro <- subset(future_wb, projection == gcms[j]); print(gcms[j])
-  data <- data.frame(fut_ro$adj_runoff)
-  colnames(data) <- c("adj_runoff")
+if(!file.exists(paste(outLocationPathFuture,'Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_'))){
+  gcms<-unique(future_wb$projection)
+  futures <- NULL
+  for (j in 1:length(gcms)){
+    # Subset one model
+    fut_ro <- subset(future_wb, projection == gcms[j]); print(gcms[j])
+    data <- data.frame(fut_ro$adj_runoff)
+    colnames(data) <- c("adj_runoff")
+    
+    # Run IHACRES model
+    DailyDrainFuture <- Drain(data, q0, qa, qb, s0, sa, sb, v0, va, vb)
+    
+    # Save streamflow projection to futures dataframe
+    drainage_qsvt <- cbind(gcms[j], fut_ro$date, DailyDrainFuture)
+    colnames(drainage_qsvt)[] <- c("projection", "date", "adj_runoff", "quick", "slow", "veryslow", "total")
+    futures <-rbind(futures, drainage_qsvt)
+  }
   
-  # Run IHACRES model
-  DailyDrainFuture <- Drain(data, q0, qa, qb, s0, sa, sb, v0, va, vb)
+  # Filter out futures that overlap with the date of the historic flow, extract GCM and RCP
+  futures<- futures[futures$date>endDate,]
+  futures$gcm <- sapply(X = strsplit(futures$projection, split=".rcp"), FUN = "[", 1) 
+  futures$rcp <- as.numeric(x = sapply(strsplit(futures$projection, split=".rcp"), FUN = "[", 2)) 
   
-  # Save streamflow projection to futures dataframe
-  drainage_qsvt <- cbind(gcms[j], fut_ro$date, DailyDrainFuture)
-  colnames(drainage_qsvt)[] <- c("projection", "date", "adj_runoff", "quick", "slow", "veryslow", "total")
-  futures <-rbind(futures, drainage_qsvt)
+  # Save future streamflow projections
+  write.csv(futures, here('Data',SiteID_FileName,paste('Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_')), row.names=FALSE)
+} else{
+  futures <- read.csv(here('Data',SiteID_FileName,paste('Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_')))
+  futures$date <- as.Date(futures$date)
 }
-
-# Filter out futures that overlap with the date of the historic flow, extract GCM and RCP
-futures<- futures[futures$date>endDate,]
-futures$gcm <- sapply(X = strsplit(futures$projection, split=".rcp"), FUN = "[", 1) 
-futures$rcp <- as.numeric(x = sapply(strsplit(futures$projection, split=".rcp"), FUN = "[", 2)) 
-
-
 
 #######################################################################
 ### COMPILE FUTURE AND HISTORICAL PROJECTIONS ###
@@ -182,128 +188,138 @@ mean_daily_df <- daily_df %>% filter(projection!='Historical') %>% group_by(date
 ### SELECT DIVERGENT CLIMATE FUTURES ###
 cf_names <- c("Warm Wet", "Hot Wet", "Central", "Warm Dry", "Hot Dry")
 
-### Pull and aggregate meteorological data ###
-# historical
-hist_climate_ann <- as.data.frame(DailyClimData %>% group_by(year(date)) %>%
-                                    dplyr::summarize(year=first(year(date)), pr = sum(pr, na.rm = TRUE),
-                                                     tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
-hist_climate_ann$t_avg <- (hist_climate_ann$tmmn + hist_climate_ann$tmmx) / 2
-
-# future
-future_climate <- get_maca_point(lat, lon, SiteID_FileName)
-future_climate_ann <- as.data.frame(future_climate %>% group_by(projection, year(date)) %>%
-                                                  dplyr::summarize(projection=first(projection), year=first(year(date)), pr = sum(pr, na.rm = TRUE),
-                                                                   tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
-future_climate_ann$t_avg <- (future_climate_ann$tmmn + future_climate_ann$tmmx) / 2
-
-# calculate averages over historical period
-hist_avg_precip <- mean(hist_climate_ann$pr)
-hist_avg_tavg <- mean(hist_climate_ann$t_avg)
-
-# calculate averages over future period (30 yr average centered around 2050: 2035-2065)
-# something is wrong: mismatch in magnitude between historical + future precip
-# probably an error in get_maca_point :(
-future_means <- future_climate_ann %>% filter(year >= 2035 & year <= 2065) %>% group_by(projection) %>% 
-  dplyr::summarize(pr=mean(pr, na.rm=TRUE), t_avg=mean(t_avg, na.rm=TRUE), pr_delta=mean(pr, na.rm=TRUE)-hist_avg_precip,
-                   tavg_delta=mean(t_avg, na.rm=TRUE)-hist_avg_tavg)
-future_centroid_pr <- mean(future_means$pr_delta)
-future_centroid_tavg <- mean(future_means$tavg_delta)
-
-# Create individual columns for gcm/rcp
-future_means$gcm <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 1)
-future_means$rcp <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 2)
-
-# Calculate quantiles
-Pr0 = as.numeric(quantile(future_means$pr_delta, 0)); Pr25 = as.numeric(quantile(future_means$pr_delta, 0.25)); PrAvg = as.numeric(mean(future_means$pr_delta)); Pr75 = as.numeric(quantile(future_means$pr_delta, 0.75)); Pr100 = as.numeric(quantile(future_means$pr_delta, 1))
-Tavg0 = as.numeric(quantile(future_means$tavg_delta, 0)); Tavg25 = as.numeric(quantile(future_means$tavg_delta, 0.25)) ; Tavg = as.numeric(mean(future_means$tavg_delta)); Tavg75 = as.numeric(quantile(future_means$tavg_delta, 0.75)); Tavg100 = as.numeric(quantile(future_means$tavg_delta, 1))
-
-
-### Plot for visualization ###
-plot <- ggplot(data=future_means, aes(x=tavg_delta, y=pr_delta, color=rcp)) + geom_point() +
-  geom_text_repel(aes(label = gcm), color = 'black', max.overlaps=Inf) +
-  geom_hline(aes(yintercept=PrAvg), color = "black", linetype='dashed') + geom_vline(aes(xintercept=Tavg), color = "black", linetype='dashed') +
-  geom_rect(aes(xmin = Tavg25, xmax = Tavg75, ymin = Pr25, ymax = Pr75), color = "black", linewidth=1, alpha=0) +
-  labs(title=paste('Changes in climate means by 2050 at',SiteID), x='Change in annual average temperature [C]', y='Change in annual average precipitation [mm]', color='RCP') + 
-  scale_color_manual(values = c("rcp45" = "orange", "rcp85" = "red")) + nps_theme()
-jpeg(file=paste0(outLocationPath, "/2050_Climate_Means.jpg"), width=650, height=500)
-print(plot)
-dev.off()
-
-
-
-### Identify the furthest futures in each quadrant using principal component analysis (PCA) ###
-# Adapted from Amber's climate futures code: https://github.com/nationalparkservice/CCRP_automated_climate_futures/blob/master/scripts/Plot_Table_Creation.R
-
-### Label each climate future with quadrants
-future_means$CF1 = as.numeric((future_means$tavg_delta<Tavg & future_means$pr_delta>Pr75) | future_means$tavg_delta<Tavg25 & future_means$pr_delta>PrAvg)
-future_means$CF2 = as.numeric((future_means$tavg_delta>Tavg & future_means$pr_delta>Pr75) | future_means$tavg_delta>Tavg75 & future_means$pr_delta>PrAvg)
-future_means$CF3 = as.numeric((future_means$tavg_delta>Tavg25 & future_means$tavg_delta<Tavg75) & (future_means$pr_delta>Pr25 & future_means$pr_delta<Pr75))
-future_means$CF4 = as.numeric((future_means$tavg_delta<Tavg & future_means$pr_delta<Pr25) | future_means$tavg_delta<Tavg25 & future_means$pr_delta<PrAvg)
-future_means$CF5 = as.numeric((future_means$tavg_delta>Tavg & future_means$pr_delta<Pr25) | future_means$tavg_delta>Tavg75 & future_means$pr_delta<PrAvg)
-
-
-#Assign full name of climate future to new variable CF
-future_means$CF <- NULL
-for(i in 1:5) {
-  future_means$CF[future_means[[paste0("CF", i)]] == 1] <- cf_names[i]
-}
-future_means <- future_means %>% select(-CF1, -CF2, -CF3, -CF4, -CF5)
-
-### Selection with corners method
-# Identify corners
-lx = min(future_means$tavg_delta); ux = max(future_means$tavg_delta); ly = min(future_means$pr_delta); uy = max(future_means$pr_delta)
-ww = c(lx,uy); wd = c(lx,ly); hw = c(ux,uy); hd = c(ux,ly)
-
-# Calculate Euclidean distance of each point from corners
-pts <- future_means
-pts$WW.distance <- sqrt((pts$tavg_delta - ww[1])^2 + (pts$pr_delta - ww[2])^2); pts$WD.distance <- sqrt((pts$tavg_delta - wd[1])^2 + (pts$pr_delta - wd[2])^2)
-pts$HW.distance <- sqrt((pts$tavg_delta - hw[1])^2 + (pts$pr_delta - hw[2])^2); pts$HD.distance <- sqrt((pts$tavg_delta - hd[1])^2 + (pts$pr_delta - hd[2])^2)
-
-# Select scenarios based on shortest distance
-pts %>% filter(CF == "Warm Wet") %>% slice(which.min(WW.distance)) %>% .$projection -> ww
-pts %>% filter(CF == "Warm Dry") %>% slice(which.min(WD.distance)) %>% .$projection -> wd
-pts %>% filter(CF == "Hot Wet") %>% slice(which.min(HW.distance)) %>% .$projection -> hw
-pts %>% filter(CF == "Hot Dry") %>% slice(which.min(HD.distance)) %>% .$projection -> hd
-
-future_means %>% mutate(corners = ifelse(projection == ww,"Warm Wet",
-                                         ifelse(projection == wd, "Warm Dry",
-                                                ifelse(projection == hw, "Hot Wet",
-                                                       ifelse(projection == hd, "Hot Dry",NA))))) -> future_means
-
-### PCA
-FM <- future_means %>% select("projection","pr_delta","tavg_delta") %>%  
-  remove_rownames %>% column_to_rownames(var="projection") 
-CF_GCM = data.frame(projection = future_means$projection, CF = future_means$CF)
-pca.df <- as.data.frame(prcomp(FM, center = TRUE,scale. = TRUE)$x)
-
-# Save results of PCA
-#if(make_plots){
-#  ggsave("PCA-loadings.jpg", plot=autoplot(pca, data = FM, loadings = TRUE,label=TRUE), width=8, height=5, path = outLocationPath) 
-#}
-write.csv(pca.df, paste0(outLocationPath, "/PCA-loadings.csv"))
-
-#Take the min/max of each of the PCs
-PCs <-rbind(data.frame(projection = c(rownames(pca.df)[which.min(pca.df$PC1)],rownames(pca.df)[which.max(pca.df$PC1)]),PC="PC1"),
-            data.frame(projection = c(rownames(pca.df)[which.min(pca.df$PC2)],rownames(pca.df)[which.max(pca.df$PC2)]),PC="PC2"))
-
-# Assigns CFs to diagonals
-diagonals <- rbind(data.frame(CF = cf_names[c(1,5)],diagonals=factor("diagonal1")),data.frame(CF = cf_names[c(4,2)],diagonals=factor("diagonal2")))
-
-# Aggregate and add PCA selections to dataframes
-PCA <- CF_GCM %>% filter(projection %in% PCs$projection) %>% left_join(diagonals,by="CF") %>% right_join(PCs,by="projection")
-future_means %>% mutate(pca = ifelse(projection %in% PCs$projection[which(PCs$PC=="PC1")], as.character(CF), #assign PCs to quadrants and select those projections
-                                     ifelse(projection %in% PCs$projection[which(PCs$PC=="PC2")], as.character(CF),NA))) -> future_means #future_means
-
-# Check whether duplicate models were selected and fix if so
-if(length(setdiff(cf_names[cf_names != "Central"],future_means$pca)) > 0){ #if a quadrant is missing 
-  future_means$pca[which(future_means$corners == setdiff(cf_names[cf_names != "Central"],future_means$pca))] = setdiff(cf_names[cf_names != "Central"],future_means$pca) #assign corners selection to that CF
-  if(nrow(PCA[duplicated(PCA$projection),]) > 0) { #If there is a redundant projection
-    future_means$pca = future_means$pca #Do nothing - otherwise end up with empty quadrant. This line could be removed and make the previous statement inverse but it makes it more confusing what's going on that way
+if(!file.exists(here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')))){
+  ### Pull and aggregate meteorological data ###
+  # historical
+  hist_climate_ann <- as.data.frame(DailyClimData %>% group_by(year(date)) %>%
+                                      dplyr::summarize(year=first(year(date)), pr = sum(pr, na.rm = TRUE),
+                                                       tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
+  hist_climate_ann$t_avg <- (hist_climate_ann$tmmn + hist_climate_ann$tmmx) / 2
+  
+  # future
+  if(point_location){
+    future_climate <- get_maca_point(lat, lon, SiteID_FileName)
   } else{
-    future_means$pca[which(future_means$projection == ID.redundant.gcm(PCA))] = NA #Removes the projection that is in redundant diagonal
+    future_climate <- get_maca_data_area(aoi, SiteID_FileName)
   }
+  future_climate_ann <- as.data.frame(future_climate %>% group_by(projection, year(date)) %>%
+                                        dplyr::summarize(projection=first(projection), year=first(year(date)), pr = sum(pr, na.rm = TRUE),
+                                                         tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
+  future_climate_ann$t_avg <- (future_climate_ann$tmmn + future_climate_ann$tmmx) / 2
+  
+  # calculate averages over historical period
+  hist_avg_precip <- mean(hist_climate_ann$pr)
+  hist_avg_tavg <- mean(hist_climate_ann$t_avg)
+  
+  # calculate averages over future period (30 yr average centered around 2050: 2035-2065)
+  # something is wrong: mismatch in magnitude between historical + future precip
+  # probably an error in get_maca_point :(
+  future_means <- future_climate_ann %>% filter(year >= 2035 & year <= 2065) %>% group_by(projection) %>% 
+    dplyr::summarize(pr=mean(pr, na.rm=TRUE), t_avg=mean(t_avg, na.rm=TRUE), pr_delta=mean(pr, na.rm=TRUE)-hist_avg_precip,
+                     tavg_delta=mean(t_avg, na.rm=TRUE)-hist_avg_tavg)
+  future_centroid_pr <- mean(future_means$pr_delta)
+  future_centroid_tavg <- mean(future_means$tavg_delta)
+  
+  # Create individual columns for gcm/rcp
+  future_means$gcm <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 1)
+  future_means$rcp <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 2)
+  
+  # Calculate quantiles
+  Pr0 = as.numeric(quantile(future_means$pr_delta, 0)); Pr25 = as.numeric(quantile(future_means$pr_delta, 0.25)); PrAvg = as.numeric(mean(future_means$pr_delta)); Pr75 = as.numeric(quantile(future_means$pr_delta, 0.75)); Pr100 = as.numeric(quantile(future_means$pr_delta, 1))
+  Tavg0 = as.numeric(quantile(future_means$tavg_delta, 0)); Tavg25 = as.numeric(quantile(future_means$tavg_delta, 0.25)) ; Tavg = as.numeric(mean(future_means$tavg_delta)); Tavg75 = as.numeric(quantile(future_means$tavg_delta, 0.75)); Tavg100 = as.numeric(quantile(future_means$tavg_delta, 1))
+  
+  
+  ### Plot for visualization ###
+  plot <- ggplot(data=future_means, aes(x=tavg_delta, y=pr_delta, color=rcp)) + geom_point() +
+    geom_text_repel(aes(label = gcm), color = 'black', max.overlaps=Inf) +
+    geom_hline(aes(yintercept=PrAvg), color = "black", linetype='dashed') + geom_vline(aes(xintercept=Tavg), color = "black", linetype='dashed') +
+    geom_rect(aes(xmin = Tavg25, xmax = Tavg75, ymin = Pr25, ymax = Pr75), color = "black", linewidth=1, alpha=0) +
+    labs(title=paste('Changes in climate means by 2050 at',SiteID), x='Change in annual average temperature [C]', y='Change in annual average precipitation [mm]', color='RCP') + 
+    scale_color_manual(values = c("rcp45" = "orange", "rcp85" = "red")) + nps_theme()
+  jpeg(file=paste0(outLocationPath, "/2050_Climate_Means.jpg"), width=650, height=500)
+  print(plot)
+  dev.off()
+  
+  
+  
+  ### Identify the furthest futures in each quadrant using principal component analysis (PCA) ###
+  # Adapted from Amber's climate futures code: https://github.com/nationalparkservice/CCRP_automated_climate_futures/blob/master/scripts/Plot_Table_Creation.R
+  
+  ### Label each climate future with quadrants
+  future_means$CF1 = as.numeric((future_means$tavg_delta<Tavg & future_means$pr_delta>Pr75) | future_means$tavg_delta<Tavg25 & future_means$pr_delta>PrAvg)
+  future_means$CF2 = as.numeric((future_means$tavg_delta>Tavg & future_means$pr_delta>Pr75) | future_means$tavg_delta>Tavg75 & future_means$pr_delta>PrAvg)
+  future_means$CF3 = as.numeric((future_means$tavg_delta>Tavg25 & future_means$tavg_delta<Tavg75) & (future_means$pr_delta>Pr25 & future_means$pr_delta<Pr75))
+  future_means$CF4 = as.numeric((future_means$tavg_delta<Tavg & future_means$pr_delta<Pr25) | future_means$tavg_delta<Tavg25 & future_means$pr_delta<PrAvg)
+  future_means$CF5 = as.numeric((future_means$tavg_delta>Tavg & future_means$pr_delta<Pr25) | future_means$tavg_delta>Tavg75 & future_means$pr_delta<PrAvg)
+  
+  
+  #Assign full name of climate future to new variable CF
+  future_means$CF <- NULL
+  for(i in 1:5) {
+    future_means$CF[future_means[[paste0("CF", i)]] == 1] <- cf_names[i]
+  }
+  future_means <- future_means %>% select(-CF1, -CF2, -CF3, -CF4, -CF5)
+  
+  ### Selection with corners method
+  # Identify corners
+  lx = min(future_means$tavg_delta); ux = max(future_means$tavg_delta); ly = min(future_means$pr_delta); uy = max(future_means$pr_delta)
+  ww = c(lx,uy); wd = c(lx,ly); hw = c(ux,uy); hd = c(ux,ly)
+  
+  # Calculate Euclidean distance of each point from corners
+  pts <- future_means
+  pts$WW.distance <- sqrt((pts$tavg_delta - ww[1])^2 + (pts$pr_delta - ww[2])^2); pts$WD.distance <- sqrt((pts$tavg_delta - wd[1])^2 + (pts$pr_delta - wd[2])^2)
+  pts$HW.distance <- sqrt((pts$tavg_delta - hw[1])^2 + (pts$pr_delta - hw[2])^2); pts$HD.distance <- sqrt((pts$tavg_delta - hd[1])^2 + (pts$pr_delta - hd[2])^2)
+  
+  # Select scenarios based on shortest distance
+  pts %>% filter(CF == "Warm Wet") %>% slice(which.min(WW.distance)) %>% .$projection -> ww
+  pts %>% filter(CF == "Warm Dry") %>% slice(which.min(WD.distance)) %>% .$projection -> wd
+  pts %>% filter(CF == "Hot Wet") %>% slice(which.min(HW.distance)) %>% .$projection -> hw
+  pts %>% filter(CF == "Hot Dry") %>% slice(which.min(HD.distance)) %>% .$projection -> hd
+  
+  future_means %>% mutate(corners = ifelse(projection == ww,"Warm Wet",
+                                           ifelse(projection == wd, "Warm Dry",
+                                                  ifelse(projection == hw, "Hot Wet",
+                                                         ifelse(projection == hd, "Hot Dry",NA))))) -> future_means
+  
+  ### PCA
+  FM <- future_means %>% select("projection","pr_delta","tavg_delta") %>%  
+    remove_rownames %>% column_to_rownames(var="projection") 
+  CF_GCM = data.frame(projection = future_means$projection, CF = future_means$CF)
+  pca.df <- as.data.frame(prcomp(FM, center = TRUE,scale. = TRUE)$x)
+  
+  # Save results of PCA
+  #if(make_plots){
+  #  ggsave("PCA-loadings.jpg", plot=autoplot(pca, data = FM, loadings = TRUE,label=TRUE), width=8, height=5, path = outLocationPath) 
+  #}
+  write.csv(pca.df, paste0(outLocationPath, "/PCA-loadings.csv"))
+  
+  #Take the min/max of each of the PCs
+  PCs <-rbind(data.frame(projection = c(rownames(pca.df)[which.min(pca.df$PC1)],rownames(pca.df)[which.max(pca.df$PC1)]),PC="PC1"),
+              data.frame(projection = c(rownames(pca.df)[which.min(pca.df$PC2)],rownames(pca.df)[which.max(pca.df$PC2)]),PC="PC2"))
+  
+  # Assigns CFs to diagonals
+  diagonals <- rbind(data.frame(CF = cf_names[c(1,5)],diagonals=factor("diagonal1")),data.frame(CF = cf_names[c(4,2)],diagonals=factor("diagonal2")))
+  
+  # Aggregate and add PCA selections to dataframes
+  PCA <- CF_GCM %>% filter(projection %in% PCs$projection) %>% left_join(diagonals,by="CF") %>% right_join(PCs,by="projection")
+  future_means %>% mutate(pca = ifelse(projection %in% PCs$projection[which(PCs$PC=="PC1")], as.character(CF), #assign PCs to quadrants and select those projections
+                                       ifelse(projection %in% PCs$projection[which(PCs$PC=="PC2")], as.character(CF),NA))) -> future_means #future_means
+  
+  # Check whether duplicate models were selected and fix if so
+  if(length(setdiff(cf_names[cf_names != "Central"],future_means$pca)) > 0){ #if a quadrant is missing 
+    future_means$pca[which(future_means$corners == setdiff(cf_names[cf_names != "Central"],future_means$pca))] = setdiff(cf_names[cf_names != "Central"],future_means$pca) #assign corners selection to that CF
+    if(nrow(PCA[duplicated(PCA$projection),]) > 0) { #If there is a redundant projection
+      future_means$pca = future_means$pca #Do nothing - otherwise end up with empty quadrant. This line could be removed and make the previous statement inverse but it makes it more confusing what's going on that way
+    } else{
+      future_means$pca[which(future_means$projection == ID.redundant.gcm(PCA))] = NA #Removes the projection that is in redundant diagonal
+    }
+  }
+  
+  # Save future means as file
+  write.csv(future_means, here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')), row.names=FALSE)
+} else{
+  future_means <- read.csv(here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')))
 }
-
 
 
 ### Identify models in format for plotting ###
@@ -400,10 +416,10 @@ if(make_plots){
   nameReduce = gsub(pattern = " ",replacement = "_", x = name)
   jpeg(file=paste0(outLocationPathFuture, "/", nameReduce, ".jpg"), width=2600, height=1600)
   plot<- ggplot() + geom_line(data=annual_df %>% filter(rcp!="Hist"), aes(x = date, y = total, color = 'Future')) +
-    geom_smooth(data=annual_df %>% filter(rcp!="Hist"), aes(x = date, y = total, color = 'Future'), method = "lm", se = FALSE) + 
+    geom_smooth(data=annual_df %>% filter(rcp!="Hist"), aes(x = date, y = total, color = 'Future'), method = "loess", se = FALSE) + 
     facet_wrap(~projection)+ ylab("Streamflow (mm)") + xlab("Year")+ ggtitle(name) + nps_theme() +
     geom_line(data=annual_df %>% filter(rcp=="Hist")%>% select(-projection), aes(x = date, y = total, color=Period)) + 
-    geom_smooth(data=annual_df %>% filter(rcp=="Hist")%>% select(-projection), aes(x = date, y = total, color=Period), method = "lm", se = FALSE) + 
+    geom_smooth(data=annual_df %>% filter(rcp=="Hist")%>% select(-projection), aes(x = date, y = total, color=Period), method = "loess", se = FALSE) + 
     scale_color_manual(values = c( "Historical" = "blue", "Future" = "black"), limits=c('Historical','Future'), name = "Period")
   print(plot)
   dev.off()
@@ -507,7 +523,42 @@ grid.arrange(grobs = plot_list, ncol=num_models)
 dev.off()
 
 
+#######################################################################
+### PLOT ECDF HISTORICAL VS FUTURE ###
+### KS test to evaluate distributions ###
+# EDIT PLOTS - do not work currently 
+# daily
+if(make_plots){
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_ECDF_Daily.jpg"), width=500, height=300)
+  plot <- ggplot(data=daily_df %>% filter(projection %in% c(model_names,"Historical"))) + 
+    stat_ecdf(aes(x=total, color=factor(projection)), linewidth=1) + 
+    labs(title='Daily ECDF', x='Streamflow (mm)', y='Cumulative Frequency', color='') +
+    scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names)), labels = c("Historical"="Historical", setNames(scenario_names, model_names))) + 
+    scale_x_log10() + nps_theme()
+  print(plot); dev.off()
+}
 
+# monthly
+if(make_plots){
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_ECDF_Monthly.jpg"), width=500, height=300)
+  plot <- ggplot(data=monthly_df %>% filter(projection %in% c(model_names,"Historical"))) + 
+    stat_ecdf(aes(x=total, color=factor(projection)), linewidth=1) + 
+    labs(title='Monthly ECDF', x='Streamflow (mm)', y='Cumulative Frequency', color='') +
+    scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names)), labels = c("Historical"="Historical", setNames(scenario_names, model_names))) + 
+    scale_x_log10() + nps_theme()
+  print(plot); dev.off()
+}
+
+# annual
+if(make_plots){
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_ECDF_Annual.jpg"), width=500, height=300)
+  plot <- ggplot(data=annual_df %>% filter(projection %in% c(model_names,"Historical"))) + 
+    stat_ecdf(aes(x=total, color=factor(projection)), linewidth=1) + 
+    labs(title='Annual ECDF', x='Streamflow (mm)', y='Cumulative Frequency', color='') +
+    scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names)), labels = c("Historical"="Historical", setNames(scenario_names, model_names))) + 
+    scale_x_log10() + nps_theme()
+  print(plot); dev.off()
+}
 
 
 
@@ -528,7 +579,7 @@ for (i in 1:length(model_names)){
   if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
   }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
   plot_mod <- ggplot(analysis_df, aes(x = date, y = total, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Daily Streamflow (mm)", title = paste(scenario, "Daily Modeled Streamflow"), color='') +
     nps_theme() + theme(legend.position = 'bottom') + scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black"))
     #annotate("text", x = max(analysis_df$date), y = max(analysis_df$total), label = label, color = "black", hjust = 1, vjust = 1)
@@ -539,18 +590,30 @@ jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Daily_Flow_Trends.jpg"), w
 grid.arrange(grobs = plot_list, ncol=num_models)
 dev.off()
 
+
 # Seasonal Mann-Kendall test on monthly streamflow
-meas_mk <- SeasonalMannKendall(ts(monthly_df$total, start=c(year(startDate), 1), frequency=12))
-if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
-}else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Monthly_Flow_Trends.jpg"), width=600, height=400)
-plot_mod <- ggplot(monthly_df, aes(x = as.yearmon(yr_mo), y = total)) + geom_line(aes(color = 'Modeled'), na.rm=TRUE, linewidth=1) +
-  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend')) +
-  labs(x = "Water Year", y = "Monthly Streamflow (mm)", title = "Monthly Modeled Streamflow", color='') +
-  nps_theme() + theme(legend.position = 'bottom') +
-  scale_color_manual(values = c("Modeled" = "black", "Trend" = "red")) +
-  annotate("text", x = max(as.yearmon(monthly_df$yr_mo)), y = max(monthly_df$total), label = label, color = "black", hjust = 1, vjust = 1)
-plot_mod
+plot_list <- list()
+for (i in 1:length(model_names)){
+  proj = model_names[i]
+  scenario <- scenario_names[i]
+  
+  analysis_df <- monthly_df %>% filter(projection=='Historical' | projection==proj)
+  analysis_df <- analysis_df[order(analysis_df$date), ]
+  
+  meas_mk <- SeasonalMannKendall(ts(analysis_df$total, start=c(year(startDate), 1), frequency=12))
+  if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
+  }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+  plot_mod <- ggplot(analysis_df, aes(x = as.yearmon(yr_mo), y = total, color=factor(projection))) + 
+    geom_line(na.rm=TRUE) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1) +
+    labs(x = "Water Year", y = "Monthly Streamflow (mm)", title = "Monthly Modeled Streamflow", color='') +
+    nps_theme() + theme(legend.position = 'bottom') +
+    scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) +
+    annotate("text", x = max(as.yearmon(monthly_df$yr_mo)), y = max(monthly_df$total), label = label, color = "black", hjust = 1, vjust = 1)
+  print(plot_mod); plot_list[[i]] <- plot_mod
+}
+jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Monthly_Flow_Trends.jpg"), width=600*num_models, height=200*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models)
 dev.off()
 
 
@@ -565,7 +628,7 @@ for (i in 1:length(model_names)){
   if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
   }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
   plot_mod <- ggplot(analysis_df, aes(x = yr, y = total, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Annual Streamflow (mm)", title = paste(scenario, "Annual Modeled Streamflow"), color='') +
     nps_theme() + theme(legend.position = 'bottom') + scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) +
     annotate("text", x = max(analysis_df$yr), y = max(analysis_df$total), label = label, color = "black", hjust = 1, vjust = 1) 
@@ -596,7 +659,7 @@ for (i in 1:length(model_names)){
   if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
   }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
   plot_mod <- ggplot(analysis_df, aes(x = yr, y = days, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Days per year", title = paste(scenario, "Days Above Historical 95th Percentile"), color='') +
     nps_theme() + theme(legend.position = 'bottom') + scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) +
     annotate("text", x = max(analysis_df$yr), y = max(analysis_df$days), label = label, color = "black", hjust = 1, vjust = 1) 
@@ -628,7 +691,7 @@ for (i in 1:length(model_names)){
   if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
   }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
   plot_mod <- ggplot(analysis_df, aes(x = yr, y = days, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Days per year", title = paste(scenario, "Days Below Historical 5th Percentile"), color='') +
     nps_theme() + theme(legend.position = 'bottom') + scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) +
     annotate("text", x = max(analysis_df$yr), y = max(analysis_df$days), label = label, color = "black", hjust = 1, vjust = 1) 
@@ -659,7 +722,7 @@ for (i in 1:length(model_names)){
   if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
   }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
   plot_mod <- ggplot(analysis_df, aes(x = water_year, y = ct, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Days after October 1", title = paste(scenario, "50% Flow Date"), color='') +
     nps_theme() + theme(legend.position = 'bottom') + scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) +
     annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$ct), label = label, color = "black", hjust = 1, vjust = 1) 
@@ -691,7 +754,7 @@ for (i in 1:length(model_names)){
   if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
   }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
   plot_mod <- ggplot(analysis_df, aes(x = water_year, y = min_q7, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Streamflow [mm]", title = paste(scenario, "Min. 7 Day Flow (Q7 Min)"), color='') +
     nps_theme() + theme(legend.position = 'bottom') + scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) +
     annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$min_q7), label = label, color = "black", hjust = 1, vjust = 1) 
@@ -714,7 +777,7 @@ for (i in 1:length(model_names)){
   if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
   }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
   plot_mod <- ggplot(analysis_df, aes(x = water_year, y = max_q7, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Streamflow [mm]", title = paste(scenario, "Max. 7 Day Flow (Q7 Max)"), color='') +
     nps_theme() + theme(legend.position = 'bottom') + scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) +
     annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$max_q7), label = label, color = "black", hjust = 1, vjust = 1) 
@@ -762,7 +825,7 @@ for (i in 1:length(model_names)){
   }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
   
   plot_mod <- ggplot(analysis_df, aes(x = water_year, y = days, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Days", title = paste('Days', comparison, round(flow_level), 'mm, ', month.abb[mos][1], '-', month.abb[mos][length(mos)]), color='') +
     nps_theme() + theme(legend.position = 'bottom') + scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) +
     annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$days), label = label, color = "black", hjust = 1, vjust = 1) 

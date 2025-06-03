@@ -436,7 +436,7 @@ get_conus_wb_direct <- function(SiteID_FileName, dataPath, filename){
     future_wb_conus <- read.csv(filename)
     
     # Clean: fix date, convert to mm, fix column names
-    future_wb_conus$date <- as.Date(future_wb_conus$date)
+    future_wb_conus <- future_wb_conus %>% rename(date = Date); future_wb_conus$date <- as.Date(future_wb_conus$date)
     future_wb_conus<-cbind(future_wb_conus[,c("date","GCM")], 25.4*(future_wb_conus[,c(which(colnames(future_wb_conus)=="Deficit.in"):ncol(future_wb_conus))]))
     colnames(future_wb_conus)<- c("date", "projection", "Deficit", "AET", "soil_water", "runoff", "rain", "accumswe", "PET")
     #future_wb<-subset(future_wb, projection !="MIROC-ESM-CHEM.rcp85")   # drop "MIROC-ESM-CHEM.rcp85" because it doesn't have an associated RCP 4.5  
