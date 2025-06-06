@@ -16,7 +16,7 @@ if(!lib_install){
   library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse); library(RColorBrewer)
   library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
   library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table); library(plotly)
-  library(tseries); library(dgof); library(wql)
+  library(tseries); library(dgof); library(wql); library(trend)
   lib_install <- TRUE
 }
 
@@ -518,4 +518,155 @@ ID.redundant.gcm <- function(PCA){
   PCA$projection[which(PCA$PC == PC.foul & PCA$projection != PCA$projection[which(PCA$diagonals == redundant.diag)])] 
 }
 
-  
+
+
+# Select future climate means
+# make this function better and not just storage for other code
+select_climate_futures <- function(){
+  if(!file.exists(here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')))){
+    ### Pull and aggregate meteorological data ###
+    # historical
+    hist_climate_ann <- as.data.frame(DailyClimData %>% group_by(year(date)) %>%
+                                        dplyr::summarize(year=first(year(date)), pr = sum(pr, na.rm = TRUE),
+                                                         tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
+    hist_climate_ann$t_avg <- (hist_climate_ann$tmmn + hist_climate_ann$tmmx) / 2
+    
+    # future
+    if(point_location){
+      future_climate <- get_maca_point(lat, lon, SiteID_FileName)
+    } else{
+      future_climate <- get_maca_data_area(aoi, SiteID_FileName)
+    }
+    future_climate_ann <- as.data.frame(future_climate %>% group_by(projection, year(date)) %>%
+                                          dplyr::summarize(projection=first(projection), year=first(year(date)), pr = sum(pr, na.rm = TRUE),
+                                                           tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
+    future_climate_ann$t_avg <- (future_climate_ann$tmmn + future_climate_ann$tmmx) / 2
+    
+    # calculate averages over historical period
+    hist_avg_precip <- mean(hist_climate_ann$pr)
+    hist_avg_tavg <- mean(hist_climate_ann$t_avg)
+    
+    # calculate averages over future period (30 yr average centered around 2050: 2035-2065)
+    # something is wrong: mismatch in magnitude between historical + future precip
+    # probably an error in get_maca_point :(
+    future_means <- future_climate_ann %>% filter(year >= 2035 & year <= 2065) %>% group_by(projection) %>% 
+      dplyr::summarize(pr=mean(pr, na.rm=TRUE), t_avg=mean(t_avg, na.rm=TRUE), pr_delta=mean(pr, na.rm=TRUE)-hist_avg_precip,
+                       tavg_delta=mean(t_avg, na.rm=TRUE)-hist_avg_tavg)
+    future_centroid_pr <- mean(future_means$pr_delta)
+    future_centroid_tavg <- mean(future_means$tavg_delta)
+    
+    # Create individual columns for gcm/rcp
+    future_means$gcm <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 1)
+    future_means$rcp <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 2)
+    
+    # Calculate quantiles
+    Pr0 = as.numeric(quantile(future_means$pr_delta, 0)); Pr25 = as.numeric(quantile(future_means$pr_delta, 0.25)); PrAvg = as.numeric(mean(future_means$pr_delta)); Pr75 = as.numeric(quantile(future_means$pr_delta, 0.75)); Pr100 = as.numeric(quantile(future_means$pr_delta, 1))
+    Tavg0 = as.numeric(quantile(future_means$tavg_delta, 0)); Tavg25 = as.numeric(quantile(future_means$tavg_delta, 0.25)) ; Tavg = as.numeric(mean(future_means$tavg_delta)); Tavg75 = as.numeric(quantile(future_means$tavg_delta, 0.75)); Tavg100 = as.numeric(quantile(future_means$tavg_delta, 1))
+    
+    
+    ### Plot for visualization ###
+    plot <- ggplot(data=future_means, aes(x=tavg_delta, y=pr_delta, color=rcp)) + geom_point() +
+      geom_text_repel(aes(label = gcm), color = 'black', max.overlaps=Inf) +
+      geom_hline(aes(yintercept=PrAvg), color = "black", linetype='dashed') + geom_vline(aes(xintercept=Tavg), color = "black", linetype='dashed') +
+      geom_rect(aes(xmin = Tavg25, xmax = Tavg75, ymin = Pr25, ymax = Pr75), color = "black", linewidth=1, alpha=0) +
+      labs(title=paste('Changes in climate means by 2050 at',SiteID), x='Change in annual average temperature [C]', y='Change in annual average precipitation [mm]', color='RCP') + 
+      scale_color_manual(values = c("rcp45" = "orange", "rcp85" = "red")) + nps_theme()
+    jpeg(file=paste0(outLocationPath, "/2050_Climate_Means.jpg"), width=650, height=500)
+    print(plot)
+    dev.off()
+    
+    
+    
+    ### Identify the furthest futures in each quadrant using principal component analysis (PCA) ###
+    # Adapted from Amber's climate futures code: https://github.com/nationalparkservice/CCRP_automated_climate_futures/blob/master/scripts/Plot_Table_Creation.R
+    
+    ### Label each climate future with quadrants
+    future_means$CF1 = as.numeric((future_means$tavg_delta<Tavg & future_means$pr_delta>Pr75) | future_means$tavg_delta<Tavg25 & future_means$pr_delta>PrAvg)
+    future_means$CF2 = as.numeric((future_means$tavg_delta>Tavg & future_means$pr_delta>Pr75) | future_means$tavg_delta>Tavg75 & future_means$pr_delta>PrAvg)
+    future_means$CF3 = as.numeric((future_means$tavg_delta>Tavg25 & future_means$tavg_delta<Tavg75) & (future_means$pr_delta>Pr25 & future_means$pr_delta<Pr75))
+    future_means$CF4 = as.numeric((future_means$tavg_delta<Tavg & future_means$pr_delta<Pr25) | future_means$tavg_delta<Tavg25 & future_means$pr_delta<PrAvg)
+    future_means$CF5 = as.numeric((future_means$tavg_delta>Tavg & future_means$pr_delta<Pr25) | future_means$tavg_delta>Tavg75 & future_means$pr_delta<PrAvg)
+    
+    
+    #Assign full name of climate future to new variable CF
+    future_means$CF <- NULL
+    for(i in 1:5) {
+      future_means$CF[future_means[[paste0("CF", i)]] == 1] <- cf_names[i]
+    }
+    future_means <- future_means %>% select(-CF1, -CF2, -CF3, -CF4, -CF5)
+    
+    ### Selection with corners method
+    # Identify corners
+    lx = min(future_means$tavg_delta); ux = max(future_means$tavg_delta); ly = min(future_means$pr_delta); uy = max(future_means$pr_delta)
+    ww = c(lx,uy); wd = c(lx,ly); hw = c(ux,uy); hd = c(ux,ly)
+    
+    # Calculate Euclidean distance of each point from corners
+    pts <- future_means
+    pts$WW.distance <- sqrt((pts$tavg_delta - ww[1])^2 + (pts$pr_delta - ww[2])^2); pts$WD.distance <- sqrt((pts$tavg_delta - wd[1])^2 + (pts$pr_delta - wd[2])^2)
+    pts$HW.distance <- sqrt((pts$tavg_delta - hw[1])^2 + (pts$pr_delta - hw[2])^2); pts$HD.distance <- sqrt((pts$tavg_delta - hd[1])^2 + (pts$pr_delta - hd[2])^2)
+    
+    # Select scenarios based on shortest distance
+    pts %>% filter(CF == "Warm Wet") %>% slice(which.min(WW.distance)) %>% .$projection -> ww
+    pts %>% filter(CF == "Warm Dry") %>% slice(which.min(WD.distance)) %>% .$projection -> wd
+    pts %>% filter(CF == "Hot Wet") %>% slice(which.min(HW.distance)) %>% .$projection -> hw
+    pts %>% filter(CF == "Hot Dry") %>% slice(which.min(HD.distance)) %>% .$projection -> hd
+    
+    future_means %>% mutate(corners = ifelse(projection == ww,"Warm Wet",
+                                             ifelse(projection == wd, "Warm Dry",
+                                                    ifelse(projection == hw, "Hot Wet",
+                                                           ifelse(projection == hd, "Hot Dry",NA))))) -> future_means
+    
+    ### PCA
+    FM <- future_means %>% select("projection","pr_delta","tavg_delta") %>%  
+      remove_rownames %>% column_to_rownames(var="projection") 
+    CF_GCM = data.frame(projection = future_means$projection, CF = future_means$CF)
+    pca.df <- as.data.frame(prcomp(FM, center = TRUE,scale. = TRUE)$x)
+    
+    # Save results of PCA
+    #if(make_plots){
+    #  ggsave("PCA-loadings.jpg", plot=autoplot(pca, data = FM, loadings = TRUE,label=TRUE), width=8, height=5, path = outLocationPath) 
+    #}
+    write.csv(pca.df, paste0(outLocationPath, "/PCA-loadings.csv"))
+    
+    #Take the min/max of each of the PCs
+    PCs <-rbind(data.frame(projection = c(rownames(pca.df)[which.min(pca.df$PC1)],rownames(pca.df)[which.max(pca.df$PC1)]),PC="PC1"),
+                data.frame(projection = c(rownames(pca.df)[which.min(pca.df$PC2)],rownames(pca.df)[which.max(pca.df$PC2)]),PC="PC2"))
+    
+    # Assigns CFs to diagonals
+    diagonals <- rbind(data.frame(CF = cf_names[c(1,5)],diagonals=factor("diagonal1")),data.frame(CF = cf_names[c(4,2)],diagonals=factor("diagonal2")))
+    
+    # Aggregate and add PCA selections to dataframes
+    PCA <- CF_GCM %>% filter(projection %in% PCs$projection) %>% left_join(diagonals,by="CF") %>% right_join(PCs,by="projection")
+    future_means %>% mutate(pca = ifelse(projection %in% PCs$projection[which(PCs$PC=="PC1")], as.character(CF), #assign PCs to quadrants and select those projections
+                                         ifelse(projection %in% PCs$projection[which(PCs$PC=="PC2")], as.character(CF),NA))) -> future_means #future_means
+    
+    # Check whether duplicate models were selected and fix if so
+    if(length(setdiff(cf_names[cf_names != "Central"],future_means$pca)) > 0){ #if a quadrant is missing 
+      future_means$pca[which(future_means$corners == setdiff(cf_names[cf_names != "Central"],future_means$pca))] = setdiff(cf_names[cf_names != "Central"],future_means$pca) #assign corners selection to that CF
+      if(nrow(PCA[duplicated(PCA$projection),]) > 0) { #If there is a redundant projection
+        future_means$pca = future_means$pca #Do nothing - otherwise end up with empty quadrant. This line could be removed and make the previous statement inverse but it makes it more confusing what's going on that way
+      } else{
+        future_means$pca[which(future_means$projection == ID.redundant.gcm(PCA))] = NA #Removes the projection that is in redundant diagonal
+      }
+    }
+    
+    ### Plot for visualization with models identified ###
+    plot <- ggplot() + geom_point(data=(future_means %>% filter(is.na(pca))), aes(x=tavg_delta, y=pr_delta, color='Other')) +
+      geom_point(data=(future_means %>% filter(!is.na(pca))), aes(x=tavg_delta, y=pr_delta, color=pca), size=5) + 
+      geom_text_repel(data=future_means %>% filter(is.na(pca)), aes(x=tavg_delta, y=pr_delta, label = projection), color = 'black', max.overlaps=Inf) +
+      geom_text_repel(data=future_means %>% filter(!is.na(pca)), aes(x=tavg_delta, y=pr_delta, label = projection, color = pca), size=4, max.overlaps=Inf) + 
+      geom_hline(aes(yintercept=PrAvg), color = "black", linetype='dashed') + geom_vline(aes(xintercept=Tavg), color = "black", linetype='dashed') +
+      geom_rect(aes(xmin = Tavg25, xmax = Tavg75, ymin = Pr25, ymax = Pr75), color = "black", linewidth=1, alpha=0) +
+      labs(title=paste('Changes in climate means by 2050 at',SiteID), x='Change in annual average temperature [C]', y='Change in annual average precipitation [mm]', color='RCP') + 
+      scale_color_manual(values = c("Other" = "black", setNames(color_names, scenario_names))) + nps_theme()
+    jpeg(file=paste0(outLocationPath, "/2050_Climate_Means_Model_Selection.jpg"), width=650, height=500)
+    print(plot)
+    dev.off()
+    
+    # Save future means as file
+    write.csv(future_means, here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')), row.names=FALSE)
+  } else{
+    future_means <- read.csv(here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')))
+  }
+  return(future_means)
+}

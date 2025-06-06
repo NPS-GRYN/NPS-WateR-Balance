@@ -206,7 +206,7 @@ if(make_plots){
     stat_ecdf(data=MeasMod, aes(x=Meas, color='Measured'), linewidth=1) + 
     labs(title='Monthly ECDF', x='Streamflow (mm)', y='Cumulative Frequency', color='') +
     scale_color_manual(values=c('Modeled'='red', 'Measured'='black')) + scale_x_log10() + 
-    annotate("text", x = max(meas), y = min(.15, na.rm=TRUE), label = label, color = "black", hjust = 1, vjust = 1) + 
+    annotate("text", x = max(MeasMod$Meas), y = min(.15, na.rm=TRUE), label = label, color = "black", hjust = 1, vjust = 1) + 
     nps_theme()
   print(plot); dev.off()
 }
@@ -221,7 +221,7 @@ if(make_plots){
     stat_ecdf(data=hist_flow_ann, aes(x=Meas, color='Measured'), linewidth=1) + 
     labs(title='Annual ECDF', x='Streamflow (mm)', y='Cumulative Frequency', color='') +
     scale_color_manual(values=c('Modeled'='red', 'Measured'='black')) + scale_x_log10() + 
-    annotate("text", x = max(meas), y = min(.15, na.rm=TRUE), label = label, color = "black", hjust = 1, vjust = 1) + 
+    annotate("text", x = max(hist_flow_ann$Meas), y = min(.15, na.rm=TRUE), label = label, color = "black", hjust = 1, vjust = 1) + 
     nps_theme()
   print(plot); dev.off()
 }

@@ -45,12 +45,12 @@ flow_components = 3  # change the number of components that characterize the flo
 percent_skill_cutoff = 0.1 # only include a certain percentage of GCMs, ranked by skill. metric is 0-1
 point_location = TRUE  # if TRUE, pull all meteorological data for a single point (center of watershed). if FALSE, pull data for entire watershed and take average (this takes longer)
 FolderName = "optim" 
-filename_future_wb = "\\Users\\mcburns\\OneDrive - DOI\\water-balance\\Data\\LittleRiver\\littleriver_water_balance_future.csv"  # file name for Mike provided future WB
+#filename_future_wb = "\\Users\\mcburns\\OneDrive - DOI\\water-balance\\Data\\LittleRiver\\littleriver_water_balance_future.csv"  # file name for Mike provided future WB
 
 ### Define watershed ###
 # centroid of watershed
-SiteID = "Little River"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
-GageSiteID <- '03497300'                  #define stream gage location (RWC: "11460151")
+SiteID = "Cataloochee"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
+GageSiteID <- '03460000'                  #define stream gage location (RWC: "11460151")
 if(provide_coords) lat = 37.9; lon = -122.59 
 
 ### Define time period for historical analysis ###
