@@ -66,7 +66,7 @@ if(calcFutureWB){
   } else{
     # Read in calculated WB 
     future_wb_calc <- read.csv(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))
-    future_wb_calc$date <- as.Date(future_wb_calc$date, '%m/%d/%Y')
+    future_wb_calc$date <- as.Date(future_wb_calc$date)
   }
 }
 
@@ -184,13 +184,13 @@ mean_daily_df <- daily_df %>% filter(projection!='Historical') %>% group_by(date
 
 #######################################################################
 ### SELECT DIVERGENT CLIMATE FUTURES ###
-cf_names <- c("Warm Wet", "Hot Wet", "Central", "Warm Dry", "Hot Dry")
+#scenario_names <- c("Warm Wet", "Hot Wet", "Warm Dry", "Hot Dry")
+color_names <- c("#12045C","#E10720","#9A9EE5","#F3D3CB")
 future_means <- select_climate_futures()
 
 
 ### Identify models in format for plotting ###
 model_names <- (future_means %>% filter(!is.na(pca)))$projection; scenario_names <- (future_means %>% filter(!is.na(pca)))$pca
-color_names <- c("#12045C","#E10720","#9A9EE5","#F3D3CB")
 
 # identify warm wet/hot dry [1:2] or warm dry/hot wet [3:4] or all (comment out both lines)
 #model_names <- model_names[1:2]; scenario_names <- scenario_names[1:2]; color_names <- color_names[1:2]
@@ -426,9 +426,6 @@ for (i in 1:length(model_names)){
 
   analysis_df <- daily_df %>% filter(projection=='Historical' | projection==proj)
   analysis_df <- analysis_df[order(analysis_df$date), ]
-  meas_mk <- SeasonalMannKendall(ts(analysis_df$total, start=c(year(startDate), 1), frequency=365))
-  if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
-  }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
   plot_mod <- ggplot(analysis_df, aes(x = date, y = total, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
     geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Daily Streamflow (mm)", title = paste(scenario, "Daily Modeled Streamflow"), color='') +

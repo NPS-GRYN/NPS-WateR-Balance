@@ -274,7 +274,7 @@ get_maca_point <- function(lat, lon, SiteID_FileName){
     write.csv(future_climate, file = here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_point.csv', sep='_')), row.names = FALSE)
   } else {
     future_climate <- read.csv(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_point.csv', sep='_')))
-    future_climate$date <- as.Date(future_climate$date)
+    future_climate$date <- as.Date(future_climate$date, '%m/%d/%Y')
   }
   return(future_climate)
 }
@@ -581,6 +581,7 @@ select_climate_futures <- function(){
     # Adapted from Amber's climate futures code: https://github.com/nationalparkservice/CCRP_automated_climate_futures/blob/master/scripts/Plot_Table_Creation.R
     
     ### Label each climate future with quadrants
+    cf_names <- c("Warm Wet", "Hot Wet", "Central", "Warm Dry", "Hot Dry")
     future_means$CF1 = as.numeric((future_means$tavg_delta<Tavg & future_means$pr_delta>Pr75) | future_means$tavg_delta<Tavg25 & future_means$pr_delta>PrAvg)
     future_means$CF2 = as.numeric((future_means$tavg_delta>Tavg & future_means$pr_delta>Pr75) | future_means$tavg_delta>Tavg75 & future_means$pr_delta>PrAvg)
     future_means$CF3 = as.numeric((future_means$tavg_delta>Tavg25 & future_means$tavg_delta<Tavg75) & (future_means$pr_delta>Pr25 & future_means$pr_delta<Pr75))
@@ -589,7 +590,7 @@ select_climate_futures <- function(){
     
     
     #Assign full name of climate future to new variable CF
-    future_means$CF <- NULL
+    future_means$CF <- NA
     for(i in 1:5) {
       future_means$CF[future_means[[paste0("CF", i)]] == 1] <- cf_names[i]
     }
@@ -658,7 +659,7 @@ select_climate_futures <- function(){
       geom_hline(aes(yintercept=PrAvg), color = "black", linetype='dashed') + geom_vline(aes(xintercept=Tavg), color = "black", linetype='dashed') +
       geom_rect(aes(xmin = Tavg25, xmax = Tavg75, ymin = Pr25, ymax = Pr75), color = "black", linewidth=1, alpha=0) +
       labs(title=paste('Changes in climate means by 2050 at',SiteID), x='Change in annual average temperature [C]', y='Change in annual average precipitation [mm]', color='RCP') + 
-      scale_color_manual(values = c("Other" = "black", setNames(color_names, scenario_names))) + nps_theme()
+      scale_color_manual(values = c("Other" = "black", setNames(color_names, cf_names[cf_names != "Central"]))) + nps_theme()
     jpeg(file=paste0(outLocationPath, "/2050_Climate_Means_Model_Selection.jpg"), width=650, height=500)
     print(plot)
     dev.off()
