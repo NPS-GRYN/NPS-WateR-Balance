@@ -46,7 +46,6 @@ userSetJTemp = FALSE
 make_plots = TRUE 
 provide_coords = FALSE # if true, user provides lat/lon coords. if false, lat/long coords are pulled from centroid of watershed with given gage id
 FolderName = "optim" 
-api_key = 'ZZjI9EAHEFsVhFf8WVgBD2J6ks14IbJZJgHYR1iBPO82EcYO2XxeDJAcwAN9'
 
 ### Define watershed ###
 # centroid of watershed

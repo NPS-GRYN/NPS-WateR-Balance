@@ -124,11 +124,15 @@ outgoing_rad = function(tmax, tmin, R.s, e.a, R.so){
 
 # Hamon Daily PET: Calculates Hamon PET from a daily time series of Tmean and daylength.
 # Args:
-#   x: A daily time series data frame containing tmean_C (deg C), and daylength (hours)
+#   tmax: a daily resolution array containing max temperature (deg C); tmin: a daily resolution array containing min temperature (deg C); date: a daily resolution array containing dates; lat: latitude
 # Returns:
 #   Daily time series of PET calculated according to Hamon method
-ET_Hamon_daily = function(x){
-  et.hamon = 0.1651*(x$daylength/12)*(216.7*(6.108*exp((17.26*x$tmean_C)/(x$tmean_C+273.3))))/(x$tmean_C+273.3)
+ET_Hamon_daily = function(tmax, tmin, date, lat){
+  tmean = (tmax + tmin)/2
+  daylength = get_daylength(date, lat)
+  
+  et.hamon = 0.1651*(daylength/12)*(216.7*(6.108*exp((17.26*tmean)/(tmean+273.3))))/(tmean+273.3)
+  
   return(et.hamon)
 }
 
@@ -146,6 +150,7 @@ ET_Thorn_monthly = function(x){
 }
 
 # Penman-Monteith Daily PET: Calculates PET (mm) from daily Tmax, Tmin, solar radiation, elevation, and latitude, according to the Penman-Monteith method. May also use daily maximum and minimum relative humidity, atmospheric vapor pressure, and wind speeds.
+# EDIT INPUTS
 # Args:
 #   x: A daily time series data frame containing Date (date object), tmax_C (deg C), tmin_C (deg C), srad (MJ m^-2 day^-1). Optionally contains RHmax (percent), RHmin (percent), vp (kPa), and wind (m/s).
 #   elev: Elevation of the site (m).
@@ -153,24 +158,20 @@ ET_Thorn_monthly = function(x){
 #   wind: (optional) An estimated value for daily average wind speeds (m/s). Use if input data frame does not contain daily wind speed values.
 # Returns:
 #   Daily time series of PET according to Penman-Monteith Method
-ET_PenmanMonteith_daily = function(x, elev, lat, wind=NULL){
-  #Inputs
-  tmax = x$tmax_C
-  tmin = x$tmin_C
+ET_PenmanMonteith_daily = function(date, tmax, tmin, srad, vpd, vs, elev, lat){
+  # Calculate inputs
   tmean = (tmax + tmin)/2
-  doy = as.numeric(strftime(x$Date, "%j"))
-  rh.max = x$RHmax
-  rh.min = x$RHmin
-  vp = x$vp
-  R.s = x$srad
-  u = ifelse(is.null(wind) == TRUE, x$wind, wind)
+  doy = as.numeric(strftime(date, "%j"))
+  #rh.max = x$RHmax
+  #rh.min = x$RHmin
+  R.s = srad * 0.0864 # convert from W/m2 to MJ/m2
   psyc.const = psyc_constant(elev)
   vap.curve = vapor_curve(tmean)
   
   #Auxilary calculations for wind terms
-  DT = vap.curve/(vap.curve + psyc.const*(1+0.34*u))
-  PT = psyc.const/(vap.curve + (psyc.const*(1+0.34*u)))
-  TT = (900/(tmean + 273))*u
+  DT = vap.curve/(vap.curve + psyc.const*(1+0.34*vs))
+  PT = psyc.const/(vap.curve + (psyc.const*(1+0.34*vs)))
+  TT = (900/(tmean + 273))*vs
   
   #Saturation vapor pressure
   e.tmax = get_svp(tmax)
@@ -178,14 +179,14 @@ ET_PenmanMonteith_daily = function(x, elev, lat, wind=NULL){
   e.s = (e.tmax + e.tmin)/2
   
   #Actual vapor pressure
-  if(is.null(vp) == TRUE){
+  if(is.null(vpd) == TRUE){
     if(is.null(rh.max) == TRUE){
       e.a = e.tmin
     } else {
       e.a = actual_vp(rh.max, rh.min)
     }
   } else {
-    e.a = vp
+    e.a = vpd
   }
   
   #Solar angle and radiation calculations

@@ -16,9 +16,12 @@ if(!lib_install){
   library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse); library(RColorBrewer)
   library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
   library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table); library(plotly)
-  library(tseries); library(dgof); library(wql); library(trend)
+  library(tseries); library(dgof); library(wql); library(trend); library(parallel)
   lib_install <- TRUE
 }
+
+# Define API key
+api_key = 'ZZjI9EAHEFsVhFf8WVgBD2J6ks14IbJZJgHYR1iBPO82EcYO2XxeDJAcwAN9'
 
 
 # Create folders for data and output
@@ -284,7 +287,7 @@ get_maca_point <- function(lat, lon, SiteID_FileName){
 # Pull MACA projections for an area of interest and clean data
 # Args:
 # Returns:
-get_maca_data_area <- function(aoi, SiteID_FileName){
+get_maca_area <- function(aoi, SiteID_FileName){
   if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_area.csv', sep='_')))){
     # Pull data
     future_climate_data <- getMACA(aoi, c('pr','rsds','vpd','vas','uas'), timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'), 
@@ -341,7 +344,7 @@ get_maca_data_area <- function(aoi, SiteID_FileName){
     write.csv(future_climate, file = here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_area.csv', sep='_')), row.names = FALSE)
   } else {
     future_climate <- read.csv(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_area.csv', sep='_')))
-    future_climate$date <- as.Date(future_climate$date)
+    future_climate$date <- as.Date(future_climate$date, '%d/%m/%Y')
   }
   return(future_climate)
 }
@@ -365,7 +368,7 @@ get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
   # Return file if it exists
   if(file.exists(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))){
     future_wb <- read.csv(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))
-    future_wb$date <- as.Date(future_wb$date)
+    future_wb$date <- as.Date(future_wb$date, '%d/%m/%Y')
     # not sure if I need this
     #future_wb$adj_runoff<- get_adj_runoff(future_wb$runoff, gw_add = gw_add, vfm = vfm)
     return(future_wb)
@@ -454,6 +457,7 @@ get_conus_wb_direct <- function(SiteID_FileName, dataPath, filename){
 
 
 # Pull OpenET data for a single point
+# AET
 get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileName, interval, dataPath, api_key){
   file_path <- here(dataPath, paste0(paste("OpenET", interval, SiteID_FileName, startY, endY, sep = "_" ), '.csv'))
   if(!file.exists(file_path)){
@@ -523,7 +527,7 @@ ID.redundant.gcm <- function(PCA){
 # Select future climate means
 # make this function better and not just storage for other code
 select_climate_futures <- function(){
-  if(!file.exists(here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')))){
+  #if(!file.exists(here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')))){
     ### Pull and aggregate meteorological data ###
     # historical
     hist_climate_ann <- as.data.frame(DailyClimData %>% group_by(year(date)) %>%
@@ -535,7 +539,7 @@ select_climate_futures <- function(){
     if(point_location){
       future_climate <- get_maca_point(lat, lon, SiteID_FileName)
     } else{
-      future_climate <- get_maca_data_area(aoi, SiteID_FileName)
+      future_climate <- get_maca_area(aoi, SiteID_FileName)
     }
     future_climate_ann <- as.data.frame(future_climate %>% group_by(projection, year(date)) %>%
                                           dplyr::summarize(projection=first(projection), year=first(year(date)), pr = sum(pr, na.rm = TRUE),
@@ -666,8 +670,8 @@ select_climate_futures <- function(){
     
     # Save future means as file
     write.csv(future_means, here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')), row.names=FALSE)
-  } else{
-    future_means <- read.csv(here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')))
-  }
+  #} else{
+  #  future_means <- read.csv(here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')))
+  #}
   return(future_means)
 }

@@ -70,6 +70,8 @@ WB <- function(DailyWB, gw_add, vfm , jrange ,hock ,hockros,dro,mondro , aspect,
   DailyWB$W = get_w(DailyWB$MELT, DailyWB$RAIN)
   DailyWB$PET = switch(PETMethod, 
                     Oudin=  {get_OudinPET(doy = DailyWB$yday, lat = lat,snowpack =  DailyWB$PACK, tmean = DailyWB$tmean_C,slope =  slope, aspect = aspect, shade.coeff = shade.coeff)},
+                    #Penman = {ET_PenmanMonteith_daily(DailyWB$date, DailyWB$tmmx, DailyWB$tmmn, DailyWB$srad, DailyWB$vpd, DailyWB$vs, elev, lat)},
+                    #Hamon = {ET_Hamon_daily(DailyWB$tmmx, DailyWB$tmmn, DailyWB$date, lat)}
                     Penman= {warning("Penman PET Method is not supported yet"); stop()},
                     Hamon = {warning("Hamon PET Method is not supported yet"); stop()})
   DailyWB$W_PET = get_w_pet(w = DailyWB$W, pet = DailyWB$PET)

@@ -49,24 +49,28 @@ if(calcFutureWB){
   if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))){
     # Get future climate data
     if(point_location) {future_climate <- get_maca_point(lat, lon, SiteID_FileName)
-    } else future_climate <- get_maca_data_area(aoi, SiteID_FileName)
+    } else future_climate <- get_maca_area(aoi, SiteID_FileName)
     
     # Run water balance code for each future projection
-    future_wb_calc <- NULL
-    for(projection in unique(future_climate$projection)){
-      print(projection)
-      ClimData <- future_climate %>% filter(projection==projection) %>% select(-projection)
+    wb_list <- vector("list", length(unique(future_climate$projection)))
+    i <- 1
+    for(proj in unique(future_climate$projection)){
+      print(proj)
+      ClimData <- future_climate %>% filter(projection==proj) %>% select(-projection)
       DailyWB_future <- WB(ClimData, gw_add, vfm, jrange, hock, hockros, dro, mondro, aspect, slope,
                            shade.coeff, jtemp, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
-      DailyWB_future <- cbind(projection, DailyWB_future)  
-      future_wb_calc <- rbind(future_wb_calc, DailyWB_future)
+      wb_list[[i]] <- cbind(proj, DailyWB_future)
+      i <- i + 1
     }
+    future_wb_calc <- do.call(rbind, wb_list); future_wb_calc <- future_wb_calc %>% rename(projection=proj)
+    
+    
     # Save calculated WB
     write.csv(future_wb_calc, here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')), row.names=FALSE)
   } else{
     # Read in calculated WB 
     future_wb_calc <- read.csv(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))
-    future_wb_calc$date <- as.Date(future_wb_calc$date)
+    future_wb_calc$date <- as.Date(future_wb_calc$date, '%m/%d/%Y')
   }
 }
 
@@ -417,8 +421,7 @@ if(make_plots){
 ### PLOT STREAMFLOW TRENDS AND METRICS ###
 # edit width of jpg figure depending on model_names
 
-# General Mann-Kendall test on daily streamflow ? should probably be seasonal
-# this is too much data to provide a useful visualization - delete?
+# Plot daily streamflow
 plot_list <- list()
 for (i in 1:length(model_names)){
   proj = model_names[i]
@@ -431,7 +434,6 @@ for (i in 1:length(model_names)){
     labs(x = "Water Year", y = "Daily Streamflow (mm)", title = paste(scenario, "Daily Modeled Streamflow"), color='') +
     scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) + 
     nps_theme() + theme(legend.position = 'bottom') + scale_y_log10()
-    #annotate("text", x = max(analysis_df$date), y = max(analysis_df$total), label = label, color = "black", hjust = 1, vjust = 1)
   print(plot_mod)
   plot_list[[i]] <- plot_mod
 }

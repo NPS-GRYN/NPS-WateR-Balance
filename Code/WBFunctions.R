@@ -120,8 +120,8 @@ get_d_soil=function(swc, swc.0=NULL){
 #   Time series vector of AET
 get_AET = function(w, pet, swc, swc.0=NULL){
   swc.i = ifelse(!is.null(swc.0), swc.0, 0)
-  AET = c()
-  for(i in 1:length(w)){
+  AET = numeric(length(w))
+  for(i in 1:length(AET)){
     AET[i] = ifelse(w[i] > pet[i], pet[i], w[i]+swc.i-swc[i])
     swc.i = swc[i]
   }
@@ -157,6 +157,7 @@ get_GDD = function(tmean, tbase=NULL){
 
 # Calculate direct runoff 
 # Update: WB package only had get runoff and not direct runoff; Excel had both
+# Improve effiency (removed for loop)
 # Args:
 #   DailyWB: A dataframe of 
 #   mondro:
@@ -170,14 +171,12 @@ get_GDD = function(tmean, tbase=NULL){
 #   raindro: 
 get_dro = function(DailyWB, mondro, dro, tmean, jtemp, jrange, precip, month){
   high = jtemp+jrange
-  raindro<- c()
-  for(i in 1:nrow(DailyWB)){
-    raindro[i]<- if (tmean[i]>high&precip[i]>0) {
-      if (month[i]>6&month[i]<11) {
-        percent_rank(precip)[i]*mondro*precip[i]
-      }else(percent_rank(precip)[i]*dro*precip[i])
-    }else(0)
-  }
+  ranks <- percent_rank(precip)
+  
+  raindro <- numeric(nrow(DailyWB))
+  raindro[(tmean>high & precip>0) & (month>6 & month<11)] <- ranks[(tmean>high & precip>0) & (month>6 & month<11)] * mondro * precip[(tmean>high & precip>0) & (month>6 & month<11)]
+  raindro[(tmean>high & precip>0) & !(month>6 & month<11)] <- ranks[(tmean>high & precip>0) & !(month>6 & month<11)] * dro * precip[(tmean>high & precip>0) & !(month>6 & month<11)]
+
   return(raindro)
 }
 
@@ -221,26 +220,22 @@ get_freeze = function (jtemp, tmean, jrange)
 get_melt = function (rain, sp.0, hockros, hock, tmean, jtemp, snow, jrange) {
   # Set initial values
   sp.0 = ifelse(!is.null(sp.0), sp.0, 0)
-  finhock<- c()
-  finhock[1]<- if (rain[1]>0&sp.0>0) hockros
-  else if (rain[1]==0 &sp.0>0) hock
-  else 0
   low = jtemp-jrange
-  melt <- vector()
+  
+  # Initialize vectors
+  finhock <- numeric(length(tmean))
+  melt <- numeric(length(tmean))
+  snowpack <- numeric(length(tmean))
+    
+  # Establish values for first day in time series
+  finhock[1]<- if(rain[1]>0&sp.0>0) hockros else if (rain[1]==0 &sp.0>0) hock else 0
   melt[1] = ifelse(tmean[1] < low | sp.0 == 0, 0, 
                    ifelse((tmean[1] - low) * finhock[1] > sp.0, sp.0, (tmean[1] - low) * finhock[1]))
-  snowpack <- vector()
   snowpack[1] = sp.0 + snow[1] - melt[1]
   
-  # Iterate through the remainder of the time series
+  # Iterate through remainder of the time series
   for (i in 2:length(tmean)) {
-    finhock[i]<- if (rain[i]>0&snowpack[i-1]>0) {
-      hockros
-    } else if (rain[i]==0 &snowpack[i-1]>0) {
-      hock
-    } else {
-      0
-    }
+    finhock[i]<- if (rain[i]>0&snowpack[i-1]>0) hockros else if (rain[i]==0 &snowpack[i-1]>0) hock else 0
     melt[i] = ifelse(tmean[i] < low| snowpack[i - 1] == 0, 0,
                      ifelse((tmean[i] - low) * finhock[i] > snowpack[i - 1], snowpack[i - 1], (tmean[i] - low) * finhock[i]))
     snowpack[i] = snowpack[i - 1] + snow[i] - melt[i]
