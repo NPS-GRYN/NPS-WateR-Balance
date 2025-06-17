@@ -117,35 +117,35 @@ if(calcFutureWB){
 }
 
 # Run IHACRES model for each future projection
-if(!file.exists(paste(outLocationPathFuture,'Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_'))){
-  gcms<-unique(future_wb$projection)
-  futures <- NULL
-  for (j in 1:length(gcms)){
-    # Subset one model
-    fut_ro <- subset(future_wb, projection == gcms[j]); print(gcms[j])
-    data <- data.frame(fut_ro$adj_runoff)
-    colnames(data) <- c("adj_runoff")
-    
-    # Run IHACRES model
-    DailyDrainFuture <- Drain(data, q0, qa, qb, s0, sa, sb, v0, va, vb)
-    
-    # Save streamflow projection to futures dataframe
-    drainage_qsvt <- cbind(gcms[j], fut_ro$date, DailyDrainFuture)
-    colnames(drainage_qsvt)[] <- c("projection", "date", "adj_runoff", "quick", "slow", "veryslow", "total")
-    futures <-rbind(futures, drainage_qsvt)
-  }
+#if(!file.exists(paste(outLocationPathFuture,'Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_'))){
+gcms<-unique(future_wb$projection)
+futures <- NULL
+for (j in 1:length(gcms)){
+  # Subset one model
+  fut_ro <- subset(future_wb, projection == gcms[j]); print(gcms[j])
+  data <- data.frame(fut_ro$adj_runoff)
+  colnames(data) <- c("adj_runoff")
   
-  # Filter out futures that overlap with the date of the historic flow, extract GCM and RCP
-  futures<- futures[futures$date>endDate,]
-  futures$gcm <- sapply(X = strsplit(futures$projection, split=".rcp"), FUN = "[", 1) 
-  futures$rcp <- as.numeric(x = sapply(strsplit(futures$projection, split=".rcp"), FUN = "[", 2)) 
+  # Run IHACRES model
+  DailyDrainFuture <- Drain(data, q0, qa, qb, s0, sa, sb, v0, va, vb)
   
-  # Save future streamflow projections
-  write.csv(futures, here('Data',SiteID_FileName,paste('Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_')), row.names=FALSE)
-} else{
-  futures <- read.csv(here('Data',SiteID_FileName,paste('Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_')))
-  futures$date <- as.Date(futures$date)
+  # Save streamflow projection to futures dataframe
+  drainage_qsvt <- cbind(gcms[j], fut_ro$date, DailyDrainFuture)
+  colnames(drainage_qsvt)[] <- c("projection", "date", "adj_runoff", "quick", "slow", "veryslow", "total")
+  futures <-rbind(futures, drainage_qsvt)
 }
+
+# Filter out futures that overlap with the date of the historic flow, extract GCM and RCP
+futures<- futures[futures$date>endDate,]
+futures$gcm <- sapply(X = strsplit(futures$projection, split=".rcp"), FUN = "[", 1) 
+futures$rcp <- as.numeric(x = sapply(strsplit(futures$projection, split=".rcp"), FUN = "[", 2)) 
+
+# Save future streamflow projections
+write.csv(futures, here('Data',SiteID_FileName,paste('Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_')), row.names=FALSE)
+#} else{
+#  futures <- read.csv(here('Data',SiteID_FileName,paste('Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_')))
+#  futures$date <- as.Date(futures$date)
+#}
 
 #######################################################################
 ### COMPILE FUTURE AND HISTORICAL PROJECTIONS ###

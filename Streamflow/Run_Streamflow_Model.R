@@ -43,7 +43,7 @@ make_plots = TRUE
 provide_coords = FALSE # if true, user provides lat/lon coords. if false, lat/lon coords are pulled from centroid of watershed with given gage id
 flow_components = 3  # change the number of components that characterize the flow. can be 2 or 3. 2: flow has quick and slow components; 3: flow has quick, slow, and very slow components.
 percent_skill_cutoff = 0.1 # only include a certain percentage of GCMs, ranked by skill. metric is 0-1
-point_location = FALSE  # if TRUE, pull all meteorological data for a single point (center of watershed). if FALSE, pull data for entire watershed and take average (this takes longer)
+point_location = TRUE  # if TRUE, pull all meteorological data for a single point (center of watershed). if FALSE, pull data for entire watershed and take average (this takes longer)
 FolderName = "optim" 
 #filename_future_wb = "\\Users\\mcburns\\OneDrive - DOI\\water-balance\\Data\\LittleRiver\\littleriver_water_balance_future.csv"  # file name for Mike provided future WB
 
@@ -159,8 +159,13 @@ meas_flow_daily <- gage_data$meas_flow_daily; meas_flow_mon <- gage_data$meas_fl
 ### Scrape and clean meteorological data (GridMET or Daymet) ### 
 
 if(GridMET) {
-  DailyClimData <- get_gridmet_data(SiteID_FileName, startY, endY, lat, lon, aoi, dataPath,
-                             tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope)
+  if(point_location){
+    DailyClimData <- get_gridmet_point(SiteID_FileName, startY, endY, lat, lon, dataPath,
+                                      tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope)
+  } else {
+    DailyClimData <- get_gridmet_area(SiteID_FileName, startY, endY, aoi, dataPath,
+                                      tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope)
+  }
 } else { 
   DailyClimData <- get_daymet_data(SiteID_FileName, startY, endY, lat, lon, aoi, dataPath)
 }

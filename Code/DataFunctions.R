@@ -147,37 +147,94 @@ get_gage_data <- function(GageSiteID, incompleteMonths, fillLeapDays, dataPath){
 
 
 
-# Scrape GridMET meteorological data and clean
+# Scrape GridMET meteorological data and clean for point location
 # Args:
 # Returns: 
 #   Dataframe with meteorological data at daily time scale
-get_gridmet_data <- function(SiteID_FileName, startY, endY, lat, lon, aoi, dataPath,
+get_gridmet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath,
                              tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope){
   # Scrape data and save
-  if(!file.exists(file.path(dataPath, paste0(paste("GridMET", SiteID_FileName, startY, endY, sep = "_" ), '.csv')))){
-    if(point_location) aoi <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
+  if(!file.exists(file.path(dataPath, paste0(paste("GridMET", SiteID_FileName, startY, endY, 'point', sep = "_" ), '.csv')))){
+    # Scrape data
+    aoi <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
     GridMET_vars <- c("pr", "srad","tmmn", "tmmx", "vpd", "vs")
     DailyClimData <- getGridMET(aoi, varname = GridMET_vars,startDate = startDate, endDate = endDate,verbose = TRUE)
-    write.csv(DailyClimData, file.path(dataPath, paste0(paste("GridMET",SiteID_FileName,startY, endY, sep = "_" ), ".csv")), row.names = FALSE) 
+    DailyClimData$date <- as.Date(DailyClimData$date)
+    
+    # Convert temperature units
+    DailyClimData$tmmn<- kelvin_to_celcius(DailyClimData$tmmn); DailyClimData$tmmx<- kelvin_to_celcius(DailyClimData$tmmx)
+    
+    # Bias adjustment for temperature 
+    DailyClimData$tmmn = get_slope_bias_adj(orig = DailyClimData$tmmn, bias = tmmn_bias, slopeadj = tmmn_slope)
+    DailyClimData$tmmx = get_slope_bias_adj(orig = DailyClimData$tmmx, bias = tmmx_bias, slopeadj = tmmx_slope)
+    
+    # Bias adjustment for precip 
+    for(i in 1:nrow(DailyClimData)){
+      DailyClimData$pr[i] = if (DailyClimData$pr[i] == 0) {
+        0
+      }else{DailyClimData$pr[i] = get_slope_bias_adj(orig = DailyClimData$pr[i], bias = p_bias, slopeadj = p_slope)}
+    }
+    
+    # Save
+    write.csv(DailyClimData, file.path(dataPath, paste0(paste("GridMET",SiteID_FileName,startY, endY, 'point', sep = "_" ), ".csv")), row.names = FALSE) 
   }else{
-    DailyClimData = read.csv(file.path(dataPath, paste0(paste("GridMET",SiteID_FileName,startY, endY, sep = "_" ), ".csv")))
+    DailyClimData = read.csv(file.path(dataPath, paste0(paste("GridMET",SiteID_FileName,startY, endY, 'point', sep = "_" ), ".csv")))
+    DailyClimData$date <- as.Date(DailyClimData$date)
   }
-  
-  # Convert temperature units
-  DailyClimData$tmmn<- kelvin_to_celcius(DailyClimData$tmmn); DailyClimData$tmmx<- kelvin_to_celcius(DailyClimData$tmmx)
-  
-  # Bias adjustment for temperature 
-  DailyClimData$tmmn = get_slope_bias_adj(orig = DailyClimData$tmmn, bias = tmmn_bias, slopeadj = tmmn_slope)
-  DailyClimData$tmmx = get_slope_bias_adj(orig = DailyClimData$tmmx, bias = tmmx_bias, slopeadj = tmmx_slope)
-  
-  # Bias adjustment for precip 
-  for(i in 1:nrow(DailyClimData)){
-    DailyClimData$pr[i] = if (DailyClimData$pr[i] == 0) {
-      0
-    }else{DailyClimData$pr[i] = get_slope_bias_adj(orig = DailyClimData$pr[i], bias = p_bias, slopeadj = p_slope)}
+  return(DailyClimData)
+}
+
+
+
+# Scrape GridMET meteorological data and clean
+# write code for AOI - doesn't work currently
+# Args:
+# Returns: 
+#   Dataframe with meteorological data at daily time scale
+get_gridmet_area <- function(SiteID_FileName, startY, endY, aoi, dataPath,
+                              tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope){
+  # Scrape data and save
+  if(!file.exists(file.path(dataPath, paste0(paste("GridMET", SiteID_FileName, startY, endY, 'area', sep = "_" ), '.csv')))){
+    # Scrape data
+    GridMET_vars <- c("pr", "srad","tmmn", "tmmx", "vpd", "vs")
+    climate_data <- getGridMET(aoi, varname = GridMET_vars,startDate = startDate, endDate = endDate,verbose = TRUE)
+    
+    # Clean
+    precip <- global(climate_data$precipitation_amount, fun = "mean", na.rm = TRUE); colnames(precip) <- c('pr')
+    precip <- precip %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date"), sep = "_") %>% select(-Variable)
+    tmmn <- global(climate_data$daily_minimum_temperature, fun = "mean", na.rm = TRUE); colnames(tmmn) <- c('tmmn')
+    tmmn <- tmmn %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date"), sep = "_") %>% select(-Variable)
+    tmmx <- global(climate_data$daily_maximum_temperature, fun = "mean", na.rm = TRUE); colnames(tmmx) <- c('tmmx')
+    tmmx <- tmmx %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date"), sep = "_") %>% select(-Variable)
+    tmmx$tmmx <- tmmx$tmmx - 273.15; tmmn$tmmn <- tmmn$tmmn - 273.15
+    srad <- global(climate_data$daily_mean_shortwave_radiation_at_surface, fun = "mean", na.rm = TRUE); colnames(srad) <- c('srad')
+    srad <- srad %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date"), sep = "_") %>% select(-Variable)
+    vpd <- global(climate_data$daily_mean_vapor_pressure_deficit, fun = "mean", na.rm = TRUE); colnames(vpd) <- c('vpd')
+    vpd <- vpd %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date"), sep = "_") %>% select(-Variable)
+    vs <- global(climate_data$daily_mean_wind_speed, fun = "mean", na.rm = TRUE); colnames(vs) <- c('vs')
+    vs <- vs %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date"), sep = "_") %>% select(-Variable)
+
+    # Combine
+    DailyClimData <- Reduce(function(x, y) merge(x, y, by = "date", all = TRUE), list(precip, tmmn, tmmx, srad, vpd, vs))
+    DailyClimData$date <- as.Date(DailyClimData$date)
+    
+    # Bias adjustment for temperature 
+    DailyClimData$tmmn = get_slope_bias_adj(orig = DailyClimData$tmmn, bias = tmmn_bias, slopeadj = tmmn_slope)
+    DailyClimData$tmmx = get_slope_bias_adj(orig = DailyClimData$tmmx, bias = tmmx_bias, slopeadj = tmmx_slope)
+    
+    # Bias adjustment for precip 
+    for(i in 1:nrow(DailyClimData)){
+      DailyClimData$pr[i] = if (DailyClimData$pr[i] == 0) {
+        0
+      }else{DailyClimData$pr[i] = get_slope_bias_adj(orig = DailyClimData$pr[i], bias = p_bias, slopeadj = p_slope)}
+    }
+    
+    
+    write.csv(DailyClimData, file.path(dataPath, paste0(paste("GridMET",SiteID_FileName,startY, endY, 'area', sep = "_" ), ".csv")), row.names = FALSE) 
+  }else{
+    DailyClimData = read.csv(file.path(dataPath, paste0(paste("GridMET",SiteID_FileName,startY, endY, 'area', sep = "_" ), ".csv")))
+    DailyClimData$date <- as.Date(DailyClimData$date)
   }
-  
-  DailyClimData$date <- as.Date(DailyClimData$date)
   return(DailyClimData)
 }
 
@@ -274,10 +331,10 @@ get_maca_point <- function(lat, lon, SiteID_FileName){
     future_climate$date <- as.Date(future_climate$date)
     
     # Save
-    write.csv(future_climate, file = here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_point.csv', sep='_')), row.names = FALSE)
+    write.csv(future_climate, file = here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_point_TEST.csv', sep='_')), row.names = FALSE)
   } else {
     future_climate <- read.csv(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_point.csv', sep='_')))
-    future_climate$date <- as.Date(future_climate$date, '%m/%d/%Y')
+    future_climate$date <- as.Date(future_climate$date)
   }
   return(future_climate)
 }
@@ -458,13 +515,13 @@ get_conus_wb_direct <- function(SiteID_FileName, dataPath, filename){
 
 # Pull OpenET data for a single point
 # AET
-get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileName, interval, dataPath, api_key){
-  file_path <- here(dataPath, paste0(paste("OpenET", interval, SiteID_FileName, startY, endY, sep = "_" ), '.csv'))
+get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileName, interval, dataPath){
+  file_path <- here('Data', SiteID_FileName, paste0(paste("OpenET", interval, SiteID_FileName, startY, endY, sep = "_" ), '.csv'))
   if(!file.exists(file_path)){
     header <- add_headers(accept = 'application/json', Authorization = api_key, content_type = 'application/json')
     
     # get data
-    args <- list(date_range = c(paste(startY, sprintf("%02d", startM), sprintf("%02d", startD), sep='-'), 
+    args <- list(date_range = c(paste(startY, sprintf("%02d", startM), sprintf("%02d", startD), sep='-'),
                                 paste(endY, sprintf("%02d", endM), sprintf("%02d", endD), sep='-')),
                  interval = interval,geometry = c(lon, lat), model = "Ensemble", variable = "ET", reference_et = "gridMET",
                  units = "mm", file_format = "JSON")
@@ -473,13 +530,14 @@ get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileNa
     # Check if request was successful
     if(response$status_code == 200){
       ET <- data.frame(fromJSON(content(response, as = "text", encoding = "UTF-8")))
-      colnames(ET) <- c('date', 'Meas ET')
-      write.csv(ET, file_path)
+      colnames(ET) <- c('date', 'Meas ET'); ET$date <- as.Date(ET$date)
+      write.csv(ET, file_path, row.names=FALSE)
     } else{
       print(paste('No', interval, 'OpenET data for that region or time period. Optimization cannot occur.')); stop()
     }
   } else {
-    ET <- read.csv(file_path, '.csv')
+    ET <- read.csv(file_path)
+    ET$date <- as.Date(ET$date)
   }
   return(ET)
 }
@@ -667,6 +725,8 @@ select_climate_futures <- function(){
     jpeg(file=paste0(outLocationPath, "/2050_Climate_Means_Model_Selection.jpg"), width=650, height=500)
     print(plot)
     dev.off()
+    
+    while (!is.null(dev.list())) dev.off()
     
     # Save future means as file
     write.csv(future_means, here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')), row.names=FALSE)

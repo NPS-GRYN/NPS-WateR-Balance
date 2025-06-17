@@ -21,15 +21,10 @@
 
 
 #######################################################################
-### Load libraries ###
-library(sf); library(raster); library(ggplot2); library(dplyr); library(xts); library(geosphere)
-library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse)
-library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
-library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table)
-
-### Source in function files ###
-path <- here() 
-setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setwd(here())
+### Load libraries and source in function files ###
+library('here'); lib_install <- FALSE
+path <- here(); setwd(here('Code'))
+sapply(list.files(pattern="*.R"), source, .GlobalEnv); setwd(here())
 
 
 #######################################################################
@@ -45,13 +40,14 @@ runFutureWB = TRUE  # TRUE to re-run entire water balance model for future; FALS
 userSetJTemp = FALSE 
 make_plots = TRUE 
 provide_coords = FALSE # if true, user provides lat/lon coords. if false, lat/long coords are pulled from centroid of watershed with given gage id
+point_location = TRUE
 FolderName = "optim" 
 
 ### Define watershed ###
 # centroid of watershed
 # must be west of approximately -90 longitude to have openET data
 SiteID = "Redwood Creek"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
-GageSiteID <- '11460151'                     #define stream gage location
+GageSiteID <- '11460151'        # USGS stream gage 
 if(provide_coords){
   lat = 37.9 
   lon = -122.59 
@@ -60,6 +56,7 @@ if(provide_coords){
 ### Define time period for historical analysis ###
 # for GridMET and stream gage; Daymet period starts one year after this period 
 # openET data (monthly) is only available 2000 - present
+# apparently right now monthly data is only available from 2010-2019? not sure why, check if this changes
 startY = 2000; startM = 01; startD = 01 
 endY = 2024; endM = 12; endD = 31
 
@@ -122,7 +119,7 @@ WB_lower = c(WB_lower, jtemp = jtemp-0.5)
 WB_upper = c(WB_upper, jtemp= jtemp+0.5)
 
 #get elevation from Daymet data. This happens regardless or whether you use Daymet or GridMET climate data
-elev = get_elev_daymet(lat, lon, startY, endY, SiteID_FileName)
+elev = get_elev_daymet(lat, lon, aoi, startY, endY, SiteID_FileName)
 
 # create start and end date objects of data collection. Daymet will start one year after the year listed here
 startDate<- ymd(paste(startY, startM, startD)); endDate<-  ymd(paste(endY, endM, endD))
@@ -133,10 +130,10 @@ startDate<- ymd(paste(startY, startM, startD)); endDate<-  ymd(paste(endY, endM,
 ### Scrape and clean openET data ###
 
 if(optimization){
-  MonthlyET <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', dataPath, api_key)
+  MonthlyET <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', dataPath)
   if(startY < 2016){startY_daily <- 2016
   } else{startY_daily <- startY}
-  DailyET <- get_et_point(startY_daily, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', dataPath, api_key)
+  DailyET <- get_et_point(startY_daily, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', dataPath)
 }
 
 
@@ -186,7 +183,7 @@ if(optimization){
   optMonth_init <- ga(type = "real-valued", fitness = function(x) 
     WB_Optim_AET(c(gw_add=x[1], vfm=x[2], jrange=x[3], hock=x[4], hockros=x[5], dro=x[6], mondro=x[7], aspect=x[8], slope=x[9], shade.coeff=x[10], SWC.Max=x[11], jtemp=x[12]), 
              Soil.Init = Soil.Init, Snowpack.Init = Snowpack.Init, T.Base = T.Base, PETMethod= PETMethod, 
-             DailyClimData = DailyClimData, lat=lat,lon=lon, meas_aet_mon = DailyET), 
+             DailyClimData = DailyClimData, lat=lat,lon=lon, meas_aet_mon = MonthlyET), 
     lower=WB_lower, upper=WB_upper) #, maxiter=300)
   elpTimeM <- Sys.time() - strtTimeM
   
