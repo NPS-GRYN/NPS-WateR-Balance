@@ -16,7 +16,7 @@ if(!lib_install){
   library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse); library(RColorBrewer)
   library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
   library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table); library(plotly)
-  library(tseries); library(dgof); library(wql); library(trend); library(parallel)
+  library(tseries); library(dgof); library(wql); library(trend); library(parallel); library(purrr)
   lib_install <- TRUE
 }
 
@@ -93,11 +93,14 @@ get_region <- function(lat, lon){
 # Returns:
 #   xts object of daily streamflow measurements and dataframe of monthly streamflow measurements
 get_gage_data <- function(GageSiteID, incompleteMonths, fillLeapDays, dataPath){
-  # Scrape data and save
   if(!file.exists(file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, sep = "_"), ".csv")))){
+    # Scrape data
     DailyStream <- EGRET::readNWISDaily(siteNumber = GageSiteID, parameterCd = "00060") |>
       dplyr::filter(grepl('A', Qualifier)) |> # this filters for any Qualifier that has an A (A and A:E)
       dplyr::mutate(CFS = Q*35.314666212661) # convert Q from m3/s to cfs
+    DailyStream$Date <- as.Date(DailyStream$Date)
+    
+    # Save
     write.csv(DailyStream, file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, sep = "_"), ".csv")))
   }else{DailyStream<- read.csv(file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, sep = "_"), ".csv")))}
   DailyStream$date <- as.Date(DailyStream$Date); DailyStream <- DailyStream %>% select(-Date)
@@ -240,18 +243,23 @@ get_gridmet_area <- function(SiteID_FileName, startY, endY, aoi, dataPath,
 
 
 
-# Scrape Daymet meteorological data and clean
+# Scrape Daymet meteorological data for point and clean
+# EDIT DATE FUNCTIONS
 # Args:
 # Returns:
-#   Dataframe with meteorological data at daily time scale
-get_daymet_data <- function(SiteID_FileName, startY, endY, lat, lon, aoi, dataPath){
+#   Dataframe with Daymet meteorological data from point location at daily time scale
+get_daymet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath){
   # Scrape data and save
-  if(!file.exists(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY+1,endY, sep = "_"), ".csv")))){
-    if(point_location) aoi <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
-    DailyClimData <- getDaymet(aoi, startDate = startDate, endDate = endDate,verbose = TRUE)
-    write.csv(DailyClimData, file.path(dataPath, paste0(paste("Daymet",SiteID_FileName,startY, endY, sep = "_" ), ".csv")), row.names = FALSE) 
+  if(!file.exists(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY+1,endY, "point", sep = "_"), ".csv")))){
+    # Scrape data
+    point <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
+    DailyClimData <- getDaymet(point, startDate = startDate, endDate = endDate,verbose = TRUE)
+    DailyClimData$date <- as.Date(DailyClimData$date)
+    
+    # Save
+    write.csv(DailyClimData, file.path(dataPath, paste0(paste("Daymet",SiteID_FileName,startY, endY, "point", sep = "_" ), ".csv")), row.names = FALSE) 
   } else{
-    DailyClimData<- read.csv(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY+1,endY, sep = "_"), ".csv")), skip = 6, header = TRUE, sep = ",")
+    DailyClimData<- read.csv(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY+1,endY, "point", sep = "_"), ".csv")), skip = 6, header = TRUE, sep = ",")
   }
   
   # Fill leap days according to user input
@@ -288,6 +296,75 @@ get_daymet_data <- function(SiteID_FileName, startY, endY, lat, lon, aoi, dataPa
     colnames(DailyClimData)<- c("Date", "dayl..s." , "pr", "srad" ,"tmmx", "tmmn", "vp..Pa.", "month")
   }else{colnames(DailyClimData)<- c("dayl..s." , "pr","srad" ,"tmmx", "tmmn", "vp..Pa." ,"Date", "month")}
   
+  return(DailyClimData)
+}
+
+
+
+# Scrape Daymet meteorological data for area and clean
+# make sure this all works
+# Args:
+# Returns:
+#   Dataframe with Daymet meteorological data from watershed average at daily time scale
+get_daymet_area <-  function(SiteID_FileName, startY, endY, aoi, dataPath){
+  if(!file.exists(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY+1,endY, "area", sep = "_"), ".csv")))){
+    # Scrape data
+    clim_data <- getDaymet(aoi, startDate = startDate, endDate = endDate,verbose = TRUE)
+    clim_data$date <- as.Date(clim_data$date)
+    
+    # Make sure all variables have been successfully accessed
+    vars <- c("dayl","prcp","srad","swe","tmax","tmin","vp")
+    for(var in vars){
+      while((class(clim_data[[var]]) != "SpatRaster")[1]){
+        print(var)
+        new_clim_data <- getDaymet(aoi, var, startDate = startDate, endDate = endDate,verbose = TRUE)
+        clim_data[[var]] <- new_clim_data[[var]]
+      }
+    }
+    
+    # Take spatial mean over all variables
+    DailyClimData <- reduce(map2(clim_data, names(clim_data), get_spatial_means), full_join, by='date')
+
+    # Cleaning
+    
+    # Address leap days
+    # check this code - seems really unwieldy/possibly could be condensed
+    HasLeapDays <- data.frame(date = as.Date(seq(0, (nrow(DailyClimData)-1), 1),
+                                             origin = ymd(paste(startY+1, startM, startD))))
+    NoLeapDays<- HasLeapDays[!(format(HasLeapDays$date,"%m") == "02" & format(HasLeapDays$date, "%d") == "29"), , drop = FALSE]
+    DifRows = nrow(HasLeapDays)-nrow(NoLeapDays)
+    LastDate = NoLeapDays[nrow(NoLeapDays),]
+    LostDates <- data.frame(date = as.Date(seq(1, DifRows, 1), origin = LastDate))
+    NoLeapDays<- rbind(NoLeapDays, LostDates)
+    row.names(NoLeapDays)<- NULL
+    DailyClimData$date<- ymd(NoLeapDays$date)
+    
+    if(fillLeapDays){
+      # Fill with data from previous day
+      DateSeq <- rbind(HasLeapDays, LostDates)
+      colnames(DateSeq)<- "date"
+      DailyClimData = dplyr::full_join(DateSeq, DailyClimData, by = join_by("date"))
+      na_rows <- as.numeric(rownames(DailyClimData[!complete.cases(DailyClimData), ]))
+      dateColNumber = which(colnames(DailyClimData)=="date")
+      for(i in na_rows){
+        DailyClimData[i,-dateColNumber]<- DailyClimData[i-1,-dateColNumber]
+      }
+    }
+    
+    # Match format of GridMET data
+    DailyClimData$month<- as.numeric(format(as.Date(DailyClimData$date, format="%Y-%m-%d"),"%m"))
+    DailyClimData<- subset(DailyClimData, DailyClimData$date<=endDate)
+    DailyClimData$swe <- NULL
+    if(fillLeapDays){ #order of columns was changed because of merging - double check
+      colnames(DailyClimData)<- c("date", "dayl..s." , "pr", "srad" ,"tmmx", "tmmn", "vp..Pa.", "month")
+    }else{colnames(DailyClimData)<- c("dayl..s." , "pr","srad" ,"tmmx", "tmmn", "vp..Pa." ,"date", "month")}
+    
+    # Save
+    write.csv(DailyClimData, file.path(dataPath, paste0(paste("Daymet",SiteID_FileName,startY, endY, "area", sep = "_" ), ".csv")), row.names = FALSE) 
+  } else{
+    DailyClimData<- read.csv(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY+1,endY, "area", sep = "_"), ".csv")), skip = 6, header = TRUE, sep = ",")
+    DailyClimData$date <- as.Date(DailyClimData$date)
+  }
   return(DailyClimData)
 }
 
@@ -342,25 +419,26 @@ get_maca_point <- function(lat, lon, SiteID_FileName){
 
 
 # Pull MACA projections for an area of interest and clean data
+# doesn't work, wrong order
 # Args:
 # Returns:
 get_maca_area <- function(aoi, SiteID_FileName){
   if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_area.csv', sep='_')))){
     # Pull data
-    future_climate_data <- getMACA(aoi, c('pr','rsds','vpd','vas','uas'), timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'), 
+    future_climate_data <- getMACA(aoi, c('pr','rsds','vpd','vas','uas'), timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'),
                                    startDate = '2023-01-01', endDate = '2099-12-31')
-    future_climate_data_tasmin <- getMACA(aoi, 'tasmin', timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'), 
+    future_climate_data_tasmin <- getMACA(aoi, 'tasmin', timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'),
                                          startDate = '2023-01-01', endDate = '2099-12-31')
-    future_climate_data_tasmax <- getMACA(aoi, 'tasmax', timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'), 
+    future_climate_data_tasmax <- getMACA(aoi, 'tasmax', timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'),
                                           startDate = '2023-01-01', endDate = '2099-12-31')
     future_climate_data$tasmin <- future_climate_data_tasmin$air_temperature; future_climate_data$tasmax <- future_climate_data_tasmax$air_temperature
-    
+
     # Check all the data is the correct length and re-query if not
     dict <- list(precipitation='pr', tasmin='tasmin', tasmax='tasmax', surface_downwelling_shortwave_flux_in_air='rsds', vpd='vpd', vas='northward_wind', uas='eastward_wind')
     for(var in c("precipitation","tasmin","tasmax","surface_downwelling_shortwave_flux_in_air","vpd","northward_wind","eastward_wind")){
       while(nlyr(future_climate_data[[var]]) != 731224){
         print(var)
-        new_future_climate_data <- getMACA(aoi, dict[[var]], timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'), 
+        new_future_climate_data <- getMACA(aoi, dict[[var]], timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'),
                        startDate = '2023-01-01', endDate = '2099-12-31')
         if(var=='tasmax' | var=='tasmin'){
           future_climate_data[[var]] <- new_future_climate_data$air_temperature
@@ -368,7 +446,7 @@ get_maca_area <- function(aoi, SiteID_FileName){
         future_climate_data[[var]] <- new_future_climate_data[[var]]
       }
     }
-    
+
     # Pull out each meteorological variable
     precip <- global(future_climate_data$precipitation, fun = "mean", na.rm = TRUE); colnames(precip) <- c('pr')
     precip <- precip %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
@@ -385,7 +463,7 @@ get_maca_area <- function(aoi, SiteID_FileName){
     vas <- vas %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
     uas <- global(future_climate_data$eastward_wind, fun = "mean", na.rm = TRUE); colnames(uas) <- c('uas')
     uas <- uas %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
-    
+
     # Merge and forcibly correct discrepancies in order
     future_climate <- precip %>% select(-pr) %>% arrange(date, tolower(GCM), RCP)
     future_climate$pr <- precip$pr; future_climate$tmmx <- tmmx$tmmx; future_climate$tmmn <- tmmn$tmmn; future_climate$srad <- srad$srad; future_climate$vpd <- vpd$vpd; future_climate$vas <- vas$vas; future_climate$uas <- uas$uas
@@ -396,14 +474,26 @@ get_maca_area <- function(aoi, SiteID_FileName){
     future_climate <- future_climate %>% select(-vas, -uas, -GCM, -RCP)
     future_climate <- future_climate[,c('projection','date','pr','srad','tmmn','tmmx','vs','vpd')]
     future_climate$date <- as.Date(future_climate$date)
-    
+
     # Save
     write.csv(future_climate, file = here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_area.csv', sep='_')), row.names = FALSE)
   } else {
     future_climate <- read.csv(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_area.csv', sep='_')))
-    future_climate$date <- as.Date(future_climate$date, '%d/%m/%Y')
+    future_climate$date <- as.Date(future_climate$date)
   }
   return(future_climate)
+}
+
+
+
+# Extract mean values with time for a single SpatRaster
+get_spatial_means <- function(rast, varname) {
+  dates <- as.Date(time(rast))
+  mean_vals <- global(rast, mean, na.rm = TRUE)[,1]  
+  
+  rast_mean <- tibble(date = dates, !!varname := mean_vals)
+  
+  return(rast_mean)
 }
 
 
@@ -474,7 +564,7 @@ get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
     }
     # Clean data
     future_wb <- future_wb[future_wb$soil_water != -32767, ]
-    future_wb$time <- as.Date(future_wb$time)
+    future_wb$date <- as.Date(future_wb$date)
     future_wb$projection <- paste(future_wb$GCM, future_wb$RCP, sep='.')
     future_wb <- subset(future_wb, select = -c(latitude, longitude, GCM, RCP))
     
@@ -530,7 +620,8 @@ get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileNa
     # Check if request was successful
     if(response$status_code == 200){
       ET <- data.frame(fromJSON(content(response, as = "text", encoding = "UTF-8")))
-      colnames(ET) <- c('date', 'Meas ET'); ET$date <- as.Date(ET$date)
+      colnames(ET) <- c('date', 'Meas ET')
+      ET$date <- as.Date(ET$date)
       write.csv(ET, file_path, row.names=FALSE)
     } else{
       print(paste('No', interval, 'OpenET data for that region or time period. Optimization cannot occur.')); stop()

@@ -6,10 +6,8 @@
 # preliminary visualizations of these future streamflow projections. 
 # 
 # EDITS IN PROGRESS
-# remember to upload the model performance file to GitHub
 # make sure everything runs smoothly
 # figure out what's the appropriate line of reasoning for the future wb models
-# add saving of future streamflow as csv
 # ---------------------------------------------------------------------
 
 
@@ -46,7 +44,7 @@ if(!calcFutureWB){
 ### Re-run water balance model to generate future projections ###
 # has the name projection been changed?
 if(calcFutureWB){
-  if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))){
+  #if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))){
     # Get future climate data
     if(point_location) {future_climate <- get_maca_point(lat, lon, SiteID_FileName)
     } else future_climate <- get_maca_area(aoi, SiteID_FileName)
@@ -67,11 +65,11 @@ if(calcFutureWB){
     
     # Save calculated WB
     write.csv(future_wb_calc, here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')), row.names=FALSE)
-  } else{
-    # Read in calculated WB 
-    future_wb_calc <- read.csv(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))
-    future_wb_calc$date <- as.Date(future_wb_calc$date, '%m/%d/%Y')
-  }
+  #} else{
+  #  # Read in calculated WB 
+  #  future_wb_calc <- read.csv(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))
+  #  future_wb_calc$date <- as.Date(future_wb_calc$date)
+  #}
 }
 
 
@@ -127,7 +125,7 @@ for (j in 1:length(gcms)){
   colnames(data) <- c("adj_runoff")
   
   # Run IHACRES model
-  DailyDrainFuture <- Drain(data, q0, qa, qb, s0, sa, sb, v0, va, vb)
+  DailyDrainFuture <- Drain(data, q0, s0, v0, qa, qb, sa, sb, va, vb)
   
   # Save streamflow projection to futures dataframe
   drainage_qsvt <- cbind(gcms[j], fut_ro$date, DailyDrainFuture)
@@ -189,7 +187,9 @@ mean_daily_df <- daily_df %>% filter(projection!='Historical') %>% group_by(date
 #######################################################################
 ### SELECT DIVERGENT CLIMATE FUTURES ###
 #scenario_names <- c("Warm Wet", "Hot Wet", "Warm Dry", "Hot Dry")
-color_names <- c("#12045C","#E10720","#9A9EE5","#F3D3CB")
+#color_names <- c("#12045C","#E10720","#9A9EE5","#F3D3CB")
+color_names <- c("#4E5BA6","#E10720","#B4B8F0","#E79C9C")
+#color_names <- c('#7570B3','#E69F00','#92A8D1','#D55E00')
 future_means <- select_climate_futures()
 
 
@@ -305,19 +305,35 @@ if(make_plots){
   delta_plot <- delta_plot %>% left_join(annual_df %>% select(gcm, rcp, yr, delta_annual_mm, Period), 
                                          by = c("gcm", "rcp", "yr","Period"))
   delta_plot <- delta_plot %>% filter(gcm!='Historical') %>% group_by(gcm,rcp,Period) %>% dplyr::summarise(delta_daily_sd=mean(delta_daily_sd), delta_annual_mm=mean(delta_annual_mm))
+  delta_plot$projection <- paste0(delta_plot$gcm, ".rcp", delta_plot$rcp) 
   annual_quantile <- data.frame(Period = c("Early", "Middle", "Late"),
                                 xintercept = c(quantile((delta_plot %>% filter(Period=='Early'))$delta_annual_mm, 0.5), quantile((delta_plot %>% filter(Period=='Middle'))$delta_annual_mm, 0.5), quantile((delta_plot %>% filter(Period=='Late'))$delta_annual_mm, 0.5)))
   sd_quantile <- data.frame(Period = c("Early", "Middle", "Late"),
                             yintercept = c(quantile((delta_plot %>% filter(Period=='Early'))$delta_daily_sd, 0.5), quantile((delta_plot %>% filter(Period=='Middle'))$delta_daily_sd, 0.5), quantile((delta_plot %>% filter(Period=='Late'))$delta_daily_sd, 0.5)))
   annual_zero <- data.frame(Period = c("Early", "Middle", "Late"), xintercept=c(0,0,0)); sd_zero <- data.frame(Period = c("Early", "Middle", "Late"), yintercept = c(0,0,0))
   
-  jpeg(file=paste0(outLocationPathFuture, "/", nameReduce, ".jpg"), width=1000, height=400)
+  # plot with RCPs
+  jpeg(file=paste0(outLocationPathFuture, "/", nameReduce, "_RCP.jpg"), width=1000, height=400)
   plot <- ggplot(data=delta_plot, aes(x=delta_annual_mm,y=delta_daily_sd,color=rcp)) + geom_point() +
     geom_text_repel(aes(label = gcm), color = 'black', max.overlaps=Inf) +
     geom_hline(data = sd_quantile, aes(yintercept = yintercept), color = "black") + geom_vline(data = annual_quantile, aes(xintercept = xintercept), color = "black") +
     #geom_hline(data = sd_zero, aes(yintercept = yintercept), color = "black") + geom_vline(data = annual_zero, aes(xintercept = xintercept), color = "black") +
     facet_wrap(~factor(Period, levels = c('Early', 'Middle', 'Late'))) + labs(title=paste('Changes in streamflow at',SiteID), x='Change in annual magnitude [mm]', y='Change in daily standard deviation [mm]', color='RCP') + 
     scale_color_manual(values = c("45" = "orange", "85" = "red")) + nps_theme()
+  print(plot)
+  dev.off()
+  
+  # plot with selected climate futures
+  jpeg(file=paste0(outLocationPathFuture, "/", nameReduce, ".jpg"), width=1000, height=400)
+  plot <- ggplot(data=delta_plot) + 
+    geom_point(data=delta_plot %>% filter(!(projection %in% model_names)), aes(x=delta_annual_mm,y=delta_daily_sd,color='Other')) +
+    geom_point(data=delta_plot %>% filter(projection %in% model_names), aes(x=delta_annual_mm,y=delta_daily_sd,color=projection)) + 
+    geom_text_repel(data=delta_plot %>% filter(!(projection %in% model_names)), aes(x=delta_annual_mm,y=delta_daily_sd, label=projection), color = 'black', size=2, max.overlaps=Inf) +
+    geom_text_repel(data=delta_plot %>% filter(projection %in% model_names), aes(x=delta_annual_mm,y=delta_daily_sd, label=projection, color=projection), size=4,  fontface = "bold", max.overlaps=Inf) + 
+    geom_hline(data = sd_quantile, aes(yintercept = yintercept), color = "black") + geom_vline(data = annual_quantile, aes(xintercept = xintercept), color = "black") +
+    #geom_hline(data = sd_zero, aes(yintercept = yintercept), color = "black") + geom_vline(data = annual_zero, aes(xintercept = xintercept), color = "black") +
+    facet_wrap(~factor(Period, levels = c('Early', 'Middle', 'Late'))) + labs(title=paste('Changes in streamflow at',SiteID), x='Change in annual magnitude [mm]', y='Change in daily standard deviation [mm]', color='RCP') + 
+    scale_color_manual(values = c("Other" = "black", setNames(color_names, model_names)), labels=c("Other" = "black", setNames(scenario_names, model_names))) + nps_theme()
   print(plot)
   dev.off()
 }
@@ -437,8 +453,8 @@ for (i in 1:length(model_names)){
   print(plot_mod)
   plot_list[[i]] <- plot_mod
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Daily_Flow_Trends.jpg"), width=600*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models)
+jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Daily_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
 dev.off()
 
 
@@ -457,14 +473,14 @@ for (i in 1:length(model_names)){
   plot_mod <- ggplot(analysis_df, aes(x = as.yearmon(yr_mo), y = total, color=factor(projection))) + 
     geom_line(na.rm=TRUE) +
     geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1) +
-    labs(x = "Water Year", y = "Monthly Streamflow (mm)", title = "Monthly Modeled Streamflow", color='') +
+    labs(x = "Water Year", y = "Monthly Streamflow (mm)", title = paste(scenario, "Monthly Modeled Streamflow"), color='') +
     nps_theme() + theme(legend.position = 'bottom') +
     scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) +
     annotate("text", x = max(as.yearmon(monthly_df$yr_mo)), y = max(monthly_df$total), label = label, color = "black", hjust = 1, vjust = 1)
   print(plot_mod); plot_list[[i]] <- plot_mod
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Monthly_Flow_Trends.jpg"), width=600*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models)
+jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Monthly_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
 dev.off()
 
 
@@ -486,8 +502,8 @@ for (i in 1:length(model_names)){
   print(plot_mod)
   plot_list[[i]] <- plot_mod
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Annual_Flow_Trends.jpg"), width=600*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models)
+jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Annual_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
 dev.off()
 
 
@@ -517,8 +533,8 @@ for (i in 1:length(model_names)){
   print(plot_mod)
   plot_list[[i]] <- plot_mod
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_High_Flow_Trends.jpg"), width=600*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models)
+jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_High_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
 dev.off()
 
 
@@ -549,8 +565,8 @@ for (i in 1:length(model_names)){
   print(plot_mod)
   plot_list[[i]] <- plot_mod
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Low_Flow_Trends.jpg"), width=600*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models)
+jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Low_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
 dev.off()
 
 
@@ -580,8 +596,8 @@ for (i in 1:length(model_names)){
   print(plot_mod)
   plot_list[[i]] <- plot_mod
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_50th_Flow_Trends.jpg"), width=600*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models)
+jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_50th_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
 dev.off()
 
 
@@ -612,8 +628,8 @@ for (i in 1:length(model_names)){
   print(plot_mod)
   plot_list[[i]] <- plot_mod
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Q7Min_Trends.jpg"), width=600*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models)
+jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Q7Min_Trends.jpg"), width=300*num_models, height=200*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
 dev.off()
 
 
@@ -635,8 +651,8 @@ for (i in 1:length(model_names)){
   print(plot_mod)
   plot_list[[i]] <- plot_mod
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Q7Max_Trends.jpg"), width=600*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models)
+jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Q7Max_Trends.jpg"), width=300*num_models, height=200*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
 dev.off()
 
 
@@ -683,8 +699,8 @@ for (i in 1:length(model_names)){
   print(plot_mod)
   plot_list[[i]] <- plot_mod
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Days_", comparison, "_", round(flow_level), "mm_", month.abb[mos][1], "_", month.abb[mos][length(mos)],".jpg"), width=600*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models)
+jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Days_", comparison, "_", round(flow_level), "mm_", month.abb[mos][1], "_", month.abb[mos][length(mos)],".jpg"), width=300*num_models, height=200*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
 dev.off()
 
 
