@@ -195,6 +195,7 @@ future_means <- select_climate_futures()
 
 ### Identify models in format for plotting ###
 model_names <- (future_means %>% filter(!is.na(pca)))$projection; scenario_names <- (future_means %>% filter(!is.na(pca)))$pca
+num_models <- length(model_names)
 
 # identify warm wet/hot dry [1:2] or warm dry/hot wet [3:4] or all (comment out both lines)
 #model_names <- model_names[1:2]; scenario_names <- scenario_names[1:2]; color_names <- color_names[1:2]
@@ -364,8 +365,8 @@ for (i in 1:length(model_names)){
     theme(axis.text.x = element_text(angle = 90))
   plot_list[[i]] <- plot
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Daily_Heatmap.jpg"), width=800*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models)
+jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Daily_Heatmap.jpg"), width=200*num_models, height=150*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
 dev.off()
 
 
@@ -390,8 +391,8 @@ for (i in 1:length(model_names)){
     nps_theme() + theme(axis.text.x = element_text(angle = 90))
   plot_list[[i]] <- plot
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Monthly_Heatmap.jpg"), width=800*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models)
+jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Monthly_Heatmap.jpg"), width=200*num_models, height=150*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
 dev.off()
 
 
@@ -467,9 +468,10 @@ for (i in 1:length(model_names)){
   analysis_df <- monthly_df %>% filter(projection=='Historical' | projection==proj)
   analysis_df <- analysis_df[order(analysis_df$date), ]
   
-  meas_mk <- SeasonalMannKendall(ts(analysis_df$total, start=c(year(startDate), 1), frequency=12))
-  if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
-  }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+  mod_mk <- SeasonalMannKendall(ts(analysis_df$total, start=c(year(startDate), 1), frequency=12))
+  mod_sens <- sens.slope(analysis_df$total[!is.na(analysis_df$total)])
+  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
   plot_mod <- ggplot(analysis_df, aes(x = as.yearmon(yr_mo), y = total, color=factor(projection))) + 
     geom_line(na.rm=TRUE) +
     geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1) +
@@ -491,9 +493,10 @@ for (i in 1:length(model_names)){
   scenario <- scenario_names[i]
   
   analysis_df <- annual_df %>% filter(projection=='Historical' | projection==proj)
-  meas_mk <- MannKendall(analysis_df$total)
-  if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
-  }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+  mod_mk <- MannKendall(analysis_df$total)
+  mod_sens <- sens.slope(analysis_df$total[!is.na(analysis_df$total)])
+  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
   plot_mod <- ggplot(analysis_df, aes(x = yr, y = total, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
     geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Annual Streamflow (mm)", title = paste(scenario, "Annual Modeled Streamflow"), color='') +
@@ -504,6 +507,25 @@ for (i in 1:length(model_names)){
 }
 jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Annual_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
 grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+dev.off()
+
+
+# Streamflow distribution
+daily_mean_mod <- daily_df %>% mutate(date_group = yday(date)) %>% group_by(projection, date_group) %>%
+  dplyr::summarize(value = mean(total, na.rm = TRUE), .groups = 'drop') %>%
+  mutate(date_group = factor(date_group, levels = c(274:366, 1:273))) %>%  arrange(date_group)
+plot <- ggplot() + 
+  geom_smooth(data = (daily_mean_mod %>% filter(!projection %in% model_names)), aes(x = date_group, y = value, group = projection, color = "Other"), alpha = 0.1,  
+                             method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+  geom_smooth(data = (daily_mean_mod %>% filter(projection %in% model_names)), aes(x = date_group, y = value, group = projection, color = projection), alpha = 1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+  geom_smooth(data = (daily_mean_mod %>% filter(projection == 'Historical')), aes(x = date_group, y = value, group = projection, color = "Historical"), alpha = 1,  
+              method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+  labs(title=paste("Smoothed Future Average Daily Streamflow"), y=paste('Streamflow [mm]'), x=NULL, color='Model') + nps_theme() + 
+  scale_color_manual(values = c("Other" = "gray", 'Historical'='black',setNames(color_names, model_names)), labels = c("Other" = 'Other Models', setNames(scenario_names, model_names))) + 
+  guides(alpha = "none") + scale_x_discrete(breaks = c(274,305,335,1,32,60,91,121,152,182,213,244),labels = c("Oct", "Nov","Dec","Jan","Feb","Mar","Apr","May","Jun",'Jul','Aug','Sep'))
+jpeg(file=paste0(outLocationPathFuture, "/", "Smoothed_Daily_Flow_Trends.jpg"), width=600, height=300)
+print(plot)
 dev.off()
 
 
@@ -522,9 +544,10 @@ for (i in 1:length(model_names)){
                                  group_by(yr) %>% dplyr::summarize(projection=first(projection), days = sum(high_flow)))
   
   # Plot
-  meas_mk <- MannKendall(analysis_df$days)
-  if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
-  }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+  mod_mk <- MannKendall(analysis_df$days)
+  mod_sens <- sens.slope(analysis_df$days[!is.na(analysis_df$days)])
+  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
   plot_mod <- ggplot(analysis_df, aes(x = yr, y = days, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
     geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Days per year", title = paste(scenario, "Days Above Historical 95th Percentile"), color='') +
@@ -554,9 +577,10 @@ for (i in 1:length(model_names)){
                                  group_by(yr) %>% dplyr::summarize(projection=first(projection), days = sum(low_flow)))
   
   # Plot
-  meas_mk <- MannKendall(analysis_df$days)
-  if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
-  }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+  mod_mk <- MannKendall(analysis_df$days)
+  mod_sens <- sens.slope(analysis_df$days[!is.na(analysis_df$days)])
+  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
   plot_mod <- ggplot(analysis_df, aes(x = yr, y = days, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
     geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Days per year", title = paste(scenario, "Days Below Historical 5th Percentile"), color='') +
@@ -577,22 +601,23 @@ for (i in 1:length(model_names)){
   scenario <- scenario_names[i]
   
   # Pull projections and add water day
-  analysis_df <- daily_df %>% filter(projection=='Historical' | projection==proj) %>% 
-    group_by(water_year) %>% mutate(water_day = (as.integer(difftime(date,ymd(paste0(water_year - 1 ,'-09-30')), units = "days"))))
+  analysis_df <- daily_df %>% filter(projection=='Historical' | projection==proj) %>% group_by(water_year) %>% 
+    mutate(water_day = (as.integer(difftime(date,ymd(paste0(water_year - 1 ,'-09-30')), units = "days")))) %>% filter(water_year < 2099 & water_year > 1979)
   
   # Calculate center of timing (CT)
   analysis_df <- as.data.frame(analysis_df) %>% mutate(tq = total*water_day) %>%
                                  group_by(water_year) %>% dplyr::summarize(projection=first(projection), ct = sum(tq)/sum(total))
 
   # Plot
-  meas_mk <- MannKendall(analysis_df$ct)
-  if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
-  }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+  mod_mk <- MannKendall(analysis_df$ct)
+  mod_sens <- sens.slope(analysis_df$ct[!is.na(analysis_df$ct)])
+  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
   plot_mod <- ggplot(analysis_df, aes(x = water_year, y = ct, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
     geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Days after October 1", title = paste(scenario, "50% Flow Date"), color='') +
     nps_theme() + theme(legend.position = 'bottom') + scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) +
-    annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$ct), label = label, color = "black", hjust = 1, vjust = 1) 
+    annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$ct), label = label, color = "black", hjust = 1, vjust = 1)
   print(plot_mod)
   plot_list[[i]] <- plot_mod
 }
@@ -617,9 +642,10 @@ for (i in 1:length(model_names)){
   scenario <- scenario_names[i]
   
   analysis_df <- hist_q7 %>% filter(projection=='Historical' | projection==proj)
-  meas_mk <- MannKendall(analysis_df$min_q7)
-  if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
-  }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+  mod_mk <- MannKendall(analysis_df$min_q7)
+  mod_sens <- sens.slope(analysis_df$min_q7[!is.na(analysis_df$min_q7)])
+  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
   plot_mod <- ggplot(analysis_df, aes(x = water_year, y = min_q7, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
     geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Streamflow [mm]", title = paste(scenario, "Min. 7 Day Flow (Q7 Min)"), color='') +
@@ -640,9 +666,10 @@ for (i in 1:length(model_names)){
   scenario <- scenario_names[i]
   
   analysis_df <- hist_q7 %>% filter(projection=='Historical' | projection==proj)
-  meas_mk <- MannKendall(analysis_df$max_q7)
-  if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
-  }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+  mod_mk <- MannKendall(analysis_df$max_q7)
+  mod_sens <- sens.slope(analysis_df$max_q7[!is.na(analysis_df$max_q7)])
+  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
   plot_mod <- ggplot(analysis_df, aes(x = water_year, y = max_q7, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
     geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
     labs(x = "Water Year", y = "Streamflow [mm]", title = paste(scenario, "Max. 7 Day Flow (Q7 Max)"), color='') +
@@ -665,17 +692,17 @@ dev.off()
 # define flow level in cfs, convert to mm
 flow_level <- 1800 * 28316847*86400/(2590000000000*sqmi) 
 # identify months of interest (numerical values)
-mos <- c(2, 3) 
+mos <- c("02", "03") 
 # is comparison above or below threshold?
 comparison = 'above'
 
 
 # calculate number of days above/below threshold
 if (tolower(comparison)=='below') {
-  threshold <- as.data.frame(daily_df %>% mutate(flow = ifelse(total <= flow_level, 1, 0)) %>%
+  threshold <- as.data.frame(daily_df %>% filter(mo %in% mos) %>% mutate(flow = ifelse(total <= flow_level, 1, 0)) %>%
                                     group_by(water_year, projection) %>% dplyr::summarize(projection=first(projection), days = sum(flow)))# %>%filter(!is.na(days)))
 } else if (tolower(comparison)=='above'){
-  threshold <- as.data.frame(daily_df %>% mutate(flow = ifelse(total >= flow_level, 1, 0)) %>%
+  threshold <- as.data.frame(daily_df %>% filter(mo %in% mos) %>% mutate(flow = ifelse(total >= flow_level, 1, 0)) %>%
                                     group_by(water_year, projection) %>% dplyr::summarize(projection=first(projection), days = sum(flow)))# %>%filter(!is.na(days)))
 }
 
@@ -687,19 +714,20 @@ for (i in 1:length(model_names)){
   
   analysis_df <- threshold %>% filter(projection=='Historical' | projection==proj) 
   
-  meas_mk <- MannKendall(analysis_df$days)
-  if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
-  }else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+  mod_mk <- MannKendall(analysis_df$days)
+  mod_sens <- sens.slope(analysis_df$days[!is.na(analysis_df$days)])
+  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
   
   plot_mod <- ggplot(analysis_df, aes(x = water_year, y = days, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
     geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
-    labs(x = "Water Year", y = "Days", title = paste('Days', comparison, round(flow_level), 'mm, ', month.abb[mos][1], '-', month.abb[mos][length(mos)]), color='') +
+    labs(x = "Water Year", y = "Days", title = paste('Days', comparison, round(flow_level), 'mm, ', month.abb[as.numeric(mos)][1], '-', month.abb[as.numeric(mos)][length(mos)]), color='') +
     nps_theme() + theme(legend.position = 'bottom') + scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) +
     annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$days), label = label, color = "black", hjust = 1, vjust = 1) 
   print(plot_mod)
   plot_list[[i]] <- plot_mod
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Days_", comparison, "_", round(flow_level), "mm_", month.abb[mos][1], "_", month.abb[mos][length(mos)],".jpg"), width=300*num_models, height=200*num_models)
+jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Days_", comparison, "_", round(flow_level), "mm_", month.abb[as.numeric(mos)][1], "_", month.abb[as.numeric(mos)][length(mos)],".jpg"), width=300*num_models, height=200*num_models)
 grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
 dev.off()
 

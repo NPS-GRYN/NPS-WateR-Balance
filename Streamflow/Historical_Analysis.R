@@ -22,10 +22,9 @@ setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setw
 GageSiteID <- GageSiteID
 SiteID <- SiteID
 #GageSiteID <- '03460000'
-#SiteID <- 'Cataloochee'
+#SiteID <- 'Cataloochee'; SiteID_FileName <- gsub(pattern = " ", x = SiteID, replacement = "")
 #make_plots <- TRUE
 
-SiteID_FileName <- gsub(pattern = " ", x = SiteID, replacement = "")
 
 # create folder to store results of historical analysis
 if(!dir.exists(here('Data', SiteID_FileName))) {dir.create(here('Data', SiteID_FileName))}; dataPath <- here('Data', SiteID_FileName)
@@ -205,8 +204,9 @@ dev.off()
 ### Daily streamflow 
 # use seasonal Mann-Kendall
 meas_mk <- SeasonalMannKendall(ts(meas_flow_daily$MeasMM, start=c(year(startDate_meas), 1), frequency=365))
-if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
-}else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+meas_sens <- sens.slope(meas_flow_daily$MeasMM[!is.na(meas_flow_daily$MeasMM)])
+if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', meas_mk$sl, meas_sens$estimates)
+}else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', meas_mk$sl, meas_sens$estimates)}
 #pett_test <- pett(meas_flow_daily$MeasMM[!is.na(meas_flow_daily$MeasMM)])
 if(make_plots){
   jpeg(file=paste0(outLocationPathHist, "/", "Daily_Flow_Trends.jpg"), width=600, height=400)
@@ -225,8 +225,9 @@ if(make_plots){
 ### Monthly streamflow
 # use seasonal Mann-Kendall
 meas_mk <- SeasonalMannKendall(ts(meas_flow_mon %>% dplyr::filter(!is.na(MeasMM)) %>% dplyr::pull(MeasMM), start=c(year(startDate_meas), 1), frequency=12))
-if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant \n p-value: %.2f', meas_mk$sl)
-}else{label <- sprintf('Trend: Not significant \n p-value: %.2f', meas_mk$sl)}
+meas_sens <- sens.slope(meas_flow_mon$MeasMM[!is.na(meas_flow_mon$MeasMM)])
+if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', meas_mk$sl, meas_sens$estimates)
+}else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', meas_mk$sl, meas_sens$estimates)}
 pett_test <- pett((meas_flow_mon %>% drop_na())$MeasMM)
 if(make_plots){
   jpeg(file=paste0(outLocationPathHist, "/", "Monthly_Flow_Trends.jpg"), width=600, height=400)
@@ -386,10 +387,10 @@ comparison = 'above'
 
 # calculate number of days above/below threshold
 if (tolower(comparison)=='below') {
-  hist_threshold <- as.data.frame(DailyStream %>% mutate(flow = ifelse(CFS <= flow_level, 1, 0)) %>%
+  hist_threshold <- as.data.frame(DailyStream %>% filter(Month %in% mos) %>% mutate(flow = ifelse(CFS <= flow_level, 1, 0)) %>%
                                     group_by(waterYear) %>% dplyr::summarize(days = sum(flow)))# %>%filter(!is.na(days)))
 } else if (tolower(comparison)=='above'){
-  hist_threshold <- as.data.frame(DailyStream %>% mutate(flow = ifelse(CFS >= flow_level, 1, 0)) %>%
+  hist_threshold <- as.data.frame(DailyStream %>% filter(Month %in% mos) %>% mutate(flow = ifelse(CFS >= flow_level, 1, 0)) %>%
                                     group_by(waterYear) %>% dplyr::summarize(days = sum(flow)))# %>%filter(!is.na(days)))
 }
 

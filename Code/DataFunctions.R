@@ -254,7 +254,6 @@ get_daymet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath){
     # Scrape data
     point <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
     DailyClimData <- getDaymet(point, startDate = startDate, endDate = endDate,verbose = TRUE)
-    DailyClimData$date <- as.Date(DailyClimData$date)
     
     # Save
     write.csv(DailyClimData, file.path(dataPath, paste0(paste("Daymet",SiteID_FileName,startY, endY, "point", sep = "_" ), ".csv")), row.names = FALSE) 
@@ -272,7 +271,7 @@ get_daymet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath){
   LostDates <- data.frame(date = as.Date(seq(1, DifRows, 1), origin = LastDate))
   NoLeapDays<- rbind(NoLeapDays, LostDates)
   row.names(NoLeapDays)<- NULL
-  DailyClimData$date<- ymd(NoLeapDays$Date)
+  DailyClimData$date<- ymd(NoLeapDays$date)
   
   if(fillLeapDays){
     # Fill with data from previous day
@@ -293,8 +292,8 @@ get_daymet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath){
   DailyClimData$yday<- NULL
   DailyClimData$swe..kg.m.2.<- NULL
   if(fillLeapDays){ #order of columns was changed because of merging 
-    colnames(DailyClimData)<- c("Date", "dayl..s." , "pr", "srad" ,"tmmx", "tmmn", "vp..Pa.", "month")
-  }else{colnames(DailyClimData)<- c("dayl..s." , "pr","srad" ,"tmmx", "tmmn", "vp..Pa." ,"Date", "month")}
+    colnames(DailyClimData)<- c("date", "dayl..s." , "pr", "srad" ,"tmmx", "tmmn", "vp..Pa.", "month")
+  }else{colnames(DailyClimData)<- c("dayl..s." , "pr","srad" ,"tmmx", "tmmn", "vp..Pa." ,"date", "month")}
   
   return(DailyClimData)
 }
@@ -323,7 +322,7 @@ get_daymet_area <-  function(SiteID_FileName, startY, endY, aoi, dataPath){
     }
     
     # Take spatial mean over all variables
-    DailyClimData <- reduce(map2(clim_data, names(clim_data), get_spatial_means), full_join, by='date')
+    DailyClimData <- reduce(map2(clim_data, names(clim_data), get_spatial_means_hist), full_join, by='date')
 
     # Cleaning
     
@@ -374,7 +373,6 @@ get_daymet_area <-  function(SiteID_FileName, startY, endY, aoi, dataPath){
 # Args:
 # Returns:
 get_maca_point <- function(lat, lon, SiteID_FileName){
-  # Pull future meteorological data
   if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_point.csv', sep='_')))){
     # Pull data
     point <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
@@ -418,7 +416,7 @@ get_maca_point <- function(lat, lon, SiteID_FileName){
 
 
 
-# Pull MACA projections for an area of interest and clean data
+# Pull future MACA projections for an area of interest and clean data
 # doesn't work, wrong order
 # Args:
 # Returns:
@@ -432,7 +430,7 @@ get_maca_area <- function(aoi, SiteID_FileName){
     future_climate_data_tasmax <- getMACA(aoi, 'tasmax', timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'),
                                           startDate = '2023-01-01', endDate = '2099-12-31')
     future_climate_data$tasmin <- future_climate_data_tasmin$air_temperature; future_climate_data$tasmax <- future_climate_data_tasmax$air_temperature
-
+    
     # Check all the data is the correct length and re-query if not
     dict <- list(precipitation='pr', tasmin='tasmin', tasmax='tasmax', surface_downwelling_shortwave_flux_in_air='rsds', vpd='vpd', vas='northward_wind', uas='eastward_wind')
     for(var in c("precipitation","tasmin","tasmax","surface_downwelling_shortwave_flux_in_air","vpd","northward_wind","eastward_wind")){
@@ -446,33 +444,44 @@ get_maca_area <- function(aoi, SiteID_FileName){
         future_climate_data[[var]] <- new_future_climate_data[[var]]
       }
     }
+    
+    # Reorganize and combine
+    future_climate <- reduce(map(future_climate_data, get_spatial_means_future), full_join, by=c('date','projection'))
+    
 
     # Pull out each meteorological variable
-    precip <- global(future_climate_data$precipitation, fun = "mean", na.rm = TRUE); colnames(precip) <- c('pr')
-    precip <- precip %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
-    tmmn <- global(future_climate_data$tasmin, fun = "mean", na.rm = TRUE); colnames(tmmn) <- c('tmmn')
-    tmmn <- tmmn %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
-    tmmx <- global(future_climate_data$tasmax, fun = "mean", na.rm = TRUE); colnames(tmmx) <- c('tmmx')
-    tmmx <- tmmx %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
-    tmmx$tmmx <- tmmx$tmmx - 273.15; tmmn$tmmn <- tmmn$tmmn - 273.15
-    srad <- global(future_climate_data$surface_downwelling_shortwave_flux_in_air, fun = "mean", na.rm = TRUE); colnames(srad) <- c('srad')
-    srad <- srad %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
-    vpd <- global(future_climate_data$vpd, fun = "mean", na.rm = TRUE); colnames(vpd) <- c('vpd')
-    vpd <- vpd %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
-    vas <- global(future_climate_data$northward_wind, fun = "mean", na.rm = TRUE); colnames(vas) <- c('vas')
-    vas <- vas %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
-    uas <- global(future_climate_data$eastward_wind, fun = "mean", na.rm = TRUE); colnames(uas) <- c('uas')
-    uas <- uas %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    # precip <- global(future_climate_data$precipitation, fun = "mean", na.rm = TRUE); colnames(precip) <- c('pr')
+    # precip <- precip %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    # tmmn <- global(future_climate_data$tasmin, fun = "mean", na.rm = TRUE); colnames(tmmn) <- c('tmmn')
+    # tmmn <- tmmn %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    # tmmx <- global(future_climate_data$tasmax, fun = "mean", na.rm = TRUE); colnames(tmmx) <- c('tmmx')
+    # tmmx <- tmmx %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    # tmmx$tmmx <- tmmx$tmmx - 273.15; tmmn$tmmn <- tmmn$tmmn - 273.15
+    # srad <- global(future_climate_data$surface_downwelling_shortwave_flux_in_air, fun = "mean", na.rm = TRUE); colnames(srad) <- c('srad')
+    # srad <- srad %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    # vpd <- global(future_climate_data$vpd, fun = "mean", na.rm = TRUE); colnames(vpd) <- c('vpd')
+    # vpd <- vpd %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    # vas <- global(future_climate_data$northward_wind, fun = "mean", na.rm = TRUE); colnames(vas) <- c('vas')
+    # vas <- vas %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
+    # uas <- global(future_climate_data$eastward_wind, fun = "mean", na.rm = TRUE); colnames(uas) <- c('uas')
+    # uas <- uas %>% rownames_to_column("rowname") %>% separate(rowname, into = c("Variable", "date","GCM","Run","RCP"), sep = "_") %>% select(-Variable, -Run)
 
     # Merge and forcibly correct discrepancies in order
-    future_climate <- precip %>% select(-pr) %>% arrange(date, tolower(GCM), RCP)
-    future_climate$pr <- precip$pr; future_climate$tmmx <- tmmx$tmmx; future_climate$tmmn <- tmmn$tmmn; future_climate$srad <- srad$srad; future_climate$vpd <- vpd$vpd; future_climate$vas <- vas$vas; future_climate$uas <- uas$uas
+    #future_climate <- precip %>% select(-pr) %>% arrange(date, tolower(GCM), RCP)
+    #future_climate$pr <- precip$pr; future_climate$tmmx <- tmmx$tmmx; future_climate$tmmn <- tmmn$tmmn; future_climate$srad <- srad$srad; future_climate$vpd <- vpd$vpd; future_climate$vas <- vas$vas; future_climate$uas <- uas$uas
 
     # Clean data
-    future_climate$vs <- sqrt(future_climate$vas^2 + future_climate$uas^2)
-    future_climate <- future_climate %>% mutate(projection = paste0(GCM, '.', RCP))
-    future_climate <- future_climate %>% select(-vas, -uas, -GCM, -RCP)
-    future_climate <- future_climate[,c('projection','date','pr','srad','tmmn','tmmx','vs','vpd')]
+    #future_climate$vs <- sqrt(future_climate$vas^2 + future_climate$uas^2)
+    #future_climate <- future_climate %>% mutate(projection = paste0(GCM, '.', RCP))
+    #future_climate <- future_climate %>% select(-vas, -uas)#, -GCM, -RCP)
+    #future_climate <- future_climate[,c('projection','date','pr','srad','tmmn','tmmx','vs','vpd')]
+    #future_climate$date <- as.Date(future_climate$date)
+    
+    # clean data
+    future_climate$vs <- sqrt(future_climate$vas^2 + future_climate$uas^2); future_climate <- future_climate %>% select(-vas, -uas)
+    future_climate$tasmin <- future_climate$tasmin - 273.15; future_climate$tasmax <- future_climate$tasmax - 273.15
+    future_climate <- future_climate %>% rename(srad=rsds, tmmx=tasmax, tmmn=tasmin)
+    future_climate <- future_climate %>% arrange(date, projection)
     future_climate$date <- as.Date(future_climate$date)
 
     # Save
@@ -486,8 +495,73 @@ get_maca_area <- function(aoi, SiteID_FileName){
 
 
 
+# Pull historical MACA projections for lat/lon point and clean data
+# Args:
+# Returns:
+get_maca_hist_point <- function(lat, lon, SiteID_FileName, model_names){
+  if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, '1960_2005_point.csv', sep='_')))){
+    # Pull data
+    point <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
+    hist_climate_data <- getMACA(point, c('tasmin','tasmax','pr','rsds','vpd','vas','uas'), timeRes='day', 
+                                   model=sapply(strsplit(model_names, "\\."), `[`, 1), scenario=sapply(strsplit(model_names, "\\."), `[`, 2), 
+                                   startDate = '1960-01-01', endDate = '2005-12-31')
+    
+    hist_climate <- hist_climate_data %>% pivot_longer(cols = -date, names_to = "var_model", values_to = "value") %>%
+      separate(var_model, into = c("variable", "projection", "ensemble", "scenario"),sep = "_") %>% 
+      pivot_wider(names_from = variable,values_from = value)
+    
+    # Clean
+    hist_climate$vs <- sqrt(hist_climate$vas^2 + hist_climate$uas^2); hist_climate <- hist_climate %>% select(-vas, -uas, -ensemble, -scenario)
+    hist_climate$tasmax <- hist_climate$tasmax - 273.15; hist_climate$tasmin <- hist_climate$tasmin - 273.15
+    colnames(hist_climate) <- c('date','projection','tmmx','vpd','tmmn','pr','srad','vs')
+    hist_climate$date <- as.Date(hist_climate$date)
+    hist_climate <- hist_climate %>% arrange(projection, date)
+    
+    # save
+    write.csv(hist_climate, here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, '1960_2005_point.csv', sep='_')), row.names = FALSE)
+  } else{
+    hist_climate <- read.csv(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, '1960_2005_point.csv', sep='_')))
+    hist_climate$date <- as.Date(hist_climate$date)
+  }
+  return(hist_climate)
+}
+
+
+
+get_maca_hist_area <- function(aoi, SiteID_FileName, model_names){
+  if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, '1960_2005_area.csv', sep='_')))){
+    # Pull data
+    hist_climate_data <- getMACA(aoi, c('pr','rsds','vpd','vas','uas'), timeRes='day', 
+                                 model=sapply(strsplit(model_names, "\\."), `[`, 1), scenario=sapply(strsplit(model_names, "\\."), `[`, 2), 
+                                 startDate = '1960-01-01', endDate = '2005-12-31')
+    hist_climate_tasmax <- getMACA(aoi, 'tasmax', timeRes='day', model=sapply(strsplit(model_names, "\\."), `[`, 1), scenario=sapply(strsplit(model_names, "\\."), `[`, 2), 
+                                   startDate = '1960-01-01', endDate = '2005-12-31')
+    hist_climate_tasmin <- getMACA(aoi, 'tasmin', timeRes='day', model=sapply(strsplit(model_names, "\\."), `[`, 1), scenario=sapply(strsplit(model_names, "\\."), `[`, 2), 
+                                   startDate = '1960-01-01', endDate = '2005-12-31')
+    hist_climate_data$tasmax <- hist_climate_tasmax$air_temperature; hist_climate_data$tasmin <- hist_climate_tasmin$air_temperature
+  
+    # Combine and clean
+    hist_climate <- reduce(map(hist_climate_data, get_spatial_means_future), full_join, by=c('date','projection'))
+    hist_climate$vs <- sqrt(hist_climate$vas^2 + hist_climate$uas^2); hist_climate <- hist_climate %>% select(-vas, -uas)
+    hist_climate$tasmax <- hist_climate$tasmax - 273.15; hist_climate$tasmin <- hist_climate$tasmin - 273.15
+    hist_climate <- hist_climate %>% rename('tmmx'='tasmax','tmmn'='tasmin','srad'='rsds')
+    hist_climate$date <- as.Date(hist_climate$date)
+    hist_climate <- hist_climate %>% separate(projection, into = c("projection", "rcp"), sep = "\\.") %>% select(-rcp)
+    hist_climate <- hist_climate %>% arrange(projection, date)
+    
+    # save
+    write.csv(hist_climate, here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, '1960_2005_area.csv', sep='_')), row.names = FALSE)
+  } else{
+    hist_climate <- read.csv(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, '1960_2005_area.csv', sep='_')))
+    hist_climate$date <- as.Date(hist_climate$date)
+  }
+  return(hist_climate)
+}
+
+
+
 # Extract mean values with time for a single SpatRaster
-get_spatial_means <- function(rast, varname) {
+get_spatial_means_hist <- function(rast, varname) {
   dates <- as.Date(time(rast))
   mean_vals <- global(rast, mean, na.rm = TRUE)[,1]  
   
@@ -496,6 +570,25 @@ get_spatial_means <- function(rast, varname) {
   return(rast_mean)
 }
 
+
+
+# Extract mean values with time for a single SpatRaster
+get_spatial_means_future <- function(rast) {
+  dates <- as.Date(time(rast))
+  layer_names <- names(rast); name_parts <- strsplit(layer_names, "_")
+  mean_vals <- global(rast, mean, na.rm = TRUE)[,1]  
+  
+  metadata_df <- do.call(rbind, lapply(name_parts, function(x) {
+    data.frame(variable = x[1], date = as.Date(x[2]), gcm = x[3], ensemble = x[4], rcp = x[5],stringsAsFactors = FALSE)
+  }))
+  varname <- unique(metadata_df$variable)
+  
+  # Add mean values
+  rast_mean <- tibble(date = metadata_df$date, projection = paste(metadata_df$gcm, metadata_df$rcp, sep="."))#!!varname := mean_vals
+  rast_mean[[varname]] <- mean_vals
+  
+  return(rast_mean)
+}
 
 
 # Pull gridded water balance data for a single point from CONUS model
@@ -676,58 +769,61 @@ ID.redundant.gcm <- function(PCA){
 # Select future climate means
 # make this function better and not just storage for other code
 select_climate_futures <- function(){
-  #if(!file.exists(here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')))){
+  #if(!file.exists(here('Data', SiteID_FileName, paste0(paste('Future_TP_Means',SiteID_FileName, sep='_'), ".csv")))){
     ### Pull and aggregate meteorological data ###
     # historical
-    hist_climate_ann <- as.data.frame(DailyClimData %>% group_by(year(date)) %>%
-                                        dplyr::summarize(year=first(year(date)), pr = sum(pr, na.rm = TRUE),
-                                                         tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
-    hist_climate_ann$t_avg <- (hist_climate_ann$tmmn + hist_climate_ann$tmmx) / 2
-    
+    # hist_climate_ann <- as.data.frame(DailyClimData %>% group_by(year(date)) %>%
+    #                                     dplyr::summarize(year=first(year(date)), pr = sum(pr, na.rm = TRUE),
+    #                                                      tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
+    # hist_climate_ann$t_avg <- (hist_climate_ann$tmmn + hist_climate_ann$tmmx) / 2
+    # 
     # future
     if(point_location){
       future_climate <- get_maca_point(lat, lon, SiteID_FileName)
     } else{
       future_climate <- get_maca_area(aoi, SiteID_FileName)
     }
-    future_climate_ann <- as.data.frame(future_climate %>% group_by(projection, year(date)) %>%
-                                          dplyr::summarize(projection=first(projection), year=first(year(date)), pr = sum(pr, na.rm = TRUE),
-                                                           tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
-    future_climate_ann$t_avg <- (future_climate_ann$tmmn + future_climate_ann$tmmx) / 2
+    # future_climate_ann <- as.data.frame(future_climate %>% group_by(projection, year(date)) %>%
+    #                                       dplyr::summarize(projection=first(projection), year=first(year(date)), pr = sum(pr, na.rm = TRUE),
+    #                                                        tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
+    # future_climate_ann$t_avg <- (future_climate_ann$tmmn + future_climate_ann$tmmx) / 2
+    # 
+    # # calculate averages over historical period
+    # hist_avg_precip <- mean(hist_climate_ann$pr, na.rm=TRUE); hist_avg_tavg <- mean(hist_climate_ann$t_avg, na.rm=TRUE)
+    # 
+    # # calculate averages over future period (30 yr average centered around 2050: 2035-2065)
+    # # something is wrong: mismatch in magnitude between historical + future precip
+    # # probably an error in get_maca_point :(
+    # future_means <- future_climate_ann %>% filter(year >= 2035 & year <= 2065) %>% group_by(projection) %>% 
+    #   dplyr::summarize(pr=mean(pr, na.rm=TRUE), t_avg=mean(t_avg, na.rm=TRUE))
+    # future_means <- future_means %>% mutate(pr_delta=pr-hist_avg_precip, tavg_delta=t_avg-hist_avg_tavg)
+    # future_centroid_pr <- mean(future_means$pr_delta)
+    # future_centroid_tavg <- mean(future_means$tavg_delta)
+    # 
+    # # Create individual columns for gcm/rcp
+    # future_means$gcm <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 1)
+    # future_means$rcp <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 2)
+    # 
+    # # Calculate quantiles
+    # Pr0 = as.numeric(quantile(future_means$pr_delta, 0)); Pr25 = as.numeric(quantile(future_means$pr_delta, 0.25)); PrAvg = as.numeric(mean(future_means$pr_delta)); Pr75 = as.numeric(quantile(future_means$pr_delta, 0.75)); Pr100 = as.numeric(quantile(future_means$pr_delta, 1))
+    # Tavg0 = as.numeric(quantile(future_means$tavg_delta, 0)); Tavg25 = as.numeric(quantile(future_means$tavg_delta, 0.25)) ; Tavg = as.numeric(mean(future_means$tavg_delta)); Tavg75 = as.numeric(quantile(future_means$tavg_delta, 0.75)); Tavg100 = as.numeric(quantile(future_means$tavg_delta, 1))
+    # 
+    # 
+    # ### Plot for visualization ###
+    # plot <- ggplot(data=future_means, aes(x=tavg_delta, y=pr_delta, color=rcp)) + geom_point() +
+    #   geom_text_repel(aes(label = gcm), color = 'black', max.overlaps=Inf) +
+    #   geom_hline(aes(yintercept=PrAvg), color = "black", linetype='dashed') + geom_vline(aes(xintercept=Tavg), color = "black", linetype='dashed') +
+    #   geom_rect(aes(xmin = Tavg25, xmax = Tavg75, ymin = Pr25, ymax = Pr75), color = "black", linewidth=1, alpha=0) +
+    #   labs(title=paste('Changes in climate means by 2050 at',SiteID), x='Change in annual average temperature [C]', y='Change in annual average precipitation [mm]', color='RCP') + 
+    #   scale_color_manual(values = c("rcp45" = "orange", "rcp85" = "red")) + nps_theme()
+    # jpeg(file=paste0(outLocationPath, "/2050_Climate_Means.jpg"), width=650, height=500)
+    # print(plot)
+    # dev.off()
+  
+    future_means <- plot_climate_futures(DailyClimData, future_climate, NA)
     
-    # calculate averages over historical period
-    hist_avg_precip <- mean(hist_climate_ann$pr)
-    hist_avg_tavg <- mean(hist_climate_ann$t_avg)
-    
-    # calculate averages over future period (30 yr average centered around 2050: 2035-2065)
-    # something is wrong: mismatch in magnitude between historical + future precip
-    # probably an error in get_maca_point :(
-    future_means <- future_climate_ann %>% filter(year >= 2035 & year <= 2065) %>% group_by(projection) %>% 
-      dplyr::summarize(pr=mean(pr, na.rm=TRUE), t_avg=mean(t_avg, na.rm=TRUE), pr_delta=mean(pr, na.rm=TRUE)-hist_avg_precip,
-                       tavg_delta=mean(t_avg, na.rm=TRUE)-hist_avg_tavg)
-    future_centroid_pr <- mean(future_means$pr_delta)
-    future_centroid_tavg <- mean(future_means$tavg_delta)
-    
-    # Create individual columns for gcm/rcp
-    future_means$gcm <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 1)
-    future_means$rcp <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 2)
-    
-    # Calculate quantiles
     Pr0 = as.numeric(quantile(future_means$pr_delta, 0)); Pr25 = as.numeric(quantile(future_means$pr_delta, 0.25)); PrAvg = as.numeric(mean(future_means$pr_delta)); Pr75 = as.numeric(quantile(future_means$pr_delta, 0.75)); Pr100 = as.numeric(quantile(future_means$pr_delta, 1))
     Tavg0 = as.numeric(quantile(future_means$tavg_delta, 0)); Tavg25 = as.numeric(quantile(future_means$tavg_delta, 0.25)) ; Tavg = as.numeric(mean(future_means$tavg_delta)); Tavg75 = as.numeric(quantile(future_means$tavg_delta, 0.75)); Tavg100 = as.numeric(quantile(future_means$tavg_delta, 1))
-    
-    
-    ### Plot for visualization ###
-    plot <- ggplot(data=future_means, aes(x=tavg_delta, y=pr_delta, color=rcp)) + geom_point() +
-      geom_text_repel(aes(label = gcm), color = 'black', max.overlaps=Inf) +
-      geom_hline(aes(yintercept=PrAvg), color = "black", linetype='dashed') + geom_vline(aes(xintercept=Tavg), color = "black", linetype='dashed') +
-      geom_rect(aes(xmin = Tavg25, xmax = Tavg75, ymin = Pr25, ymax = Pr75), color = "black", linewidth=1, alpha=0) +
-      labs(title=paste('Changes in climate means by 2050 at',SiteID), x='Change in annual average temperature [C]', y='Change in annual average precipitation [mm]', color='RCP') + 
-      scale_color_manual(values = c("rcp45" = "orange", "rcp85" = "red")) + nps_theme()
-    jpeg(file=paste0(outLocationPath, "/2050_Climate_Means.jpg"), width=650, height=500)
-    print(plot)
-    dev.off()
-    
     
     
     ### Identify the furthest futures in each quadrant using principal component analysis (PCA) ###
@@ -780,7 +876,7 @@ select_climate_futures <- function(){
     #if(make_plots){
     #  ggsave("PCA-loadings.jpg", plot=autoplot(pca, data = FM, loadings = TRUE,label=TRUE), width=8, height=5, path = outLocationPath) 
     #}
-    write.csv(pca.df, paste0(outLocationPath, "/PCA-loadings.csv"))
+    #write.csv(pca.df, paste0(outLocationPath, "/PCA-loadings.csv"))
     
     #Take the min/max of each of the PCs
     PCs <-rbind(data.frame(projection = c(rownames(pca.df)[which.min(pca.df$PC1)],rownames(pca.df)[which.max(pca.df$PC1)]),PC="PC1"),
@@ -820,9 +916,98 @@ select_climate_futures <- function(){
     while (!is.null(dev.list())) dev.off()
     
     # Save future means as file
-    write.csv(future_means, here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')), row.names=FALSE)
+    write.csv(future_means, here('Data', SiteID_FileName, paste0(paste('Future_TP_Means',SiteID_FileName, sep='_'), ".csv")), row.names=FALSE)
   #} else{
   #  future_means <- read.csv(here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')))
   #}
+  return(future_means)
+}
+
+
+
+plot_climate_futures <- function(hist, future, model_names){
+  # Future aggregation
+  future_ann <- as.data.frame(future %>% group_by(projection, year(date)) %>%
+                                        dplyr::summarize(projection=first(projection), year=first(year(date)), pr = sum(pr, na.rm = TRUE),
+                                                         tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
+  future_ann$t_avg <- (future_ann$tmmn + future_ann$tmmx) / 2
+  future_means <- future_ann %>% filter(year >= 2035 & year <= 2065) %>%
+    group_by(projection) %>% summarize(pr = mean(pr, na.rm = TRUE), t_avg = mean(t_avg, na.rm = TRUE), .groups = "drop")
+  
+  # Create individual columns for gcm/rcp
+  future_means$gcm <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 1)
+  future_means$rcp <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 2)
+  
+  # Calculate change
+  if("projection" %in% colnames(hist)){
+    # calculate historical average
+    hist_ann <- as.data.frame(hist %>% group_by(projection, year(date)) %>%
+                                dplyr::summarize(projection=first(projection), year=first(year(date)), pr = sum(pr, na.rm = TRUE),
+                                                 tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
+    hist_ann$t_avg <- (hist_ann$tmmn + hist_ann$tmmx) / 2
+    hist_ann <- hist_ann %>% rename(gcm = projection)
+    hist_means <- hist_ann %>% group_by(gcm) %>% summarize(pr_hist = mean(pr, na.rm = TRUE), tavg_hist = mean(t_avg, na.rm = TRUE),.groups = "drop")
+    
+    # calculate delta
+    future_means <- future_means %>% filter(projection %in% model_names) %>% left_join(hist_means, by = "gcm") %>%
+      mutate(pr_delta = pr - pr_hist, tavg_delta = t_avg - tavg_hist)
+    
+  } else{
+    # calculate historical average
+    hist_ann <- as.data.frame(hist %>% group_by(year(date)) %>%
+                                dplyr::summarize(year=first(year(date)), pr = sum(pr, na.rm = TRUE),
+                                                 tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
+    hist_ann$t_avg <- (hist_ann$tmmn + hist_ann$tmmx) / 2
+    hist_avg_precip <- mean(hist_ann$pr); hist_avg_tavg <- mean(hist_ann$t_avg)
+    
+    # calculate delta
+    future_means <- future_means %>% mutate(pr_delta=pr-hist_avg_precip,
+                       tavg_delta=t_avg-hist_avg_tavg)
+  }
+  
+  # Calculate quantiles
+  Pr0 = as.numeric(quantile(future_means$pr_delta, 0, na.rm=TRUE)); Pr25 = as.numeric(quantile(future_means$pr_delta, 0.25, na.rm=TRUE)); PrAvg = as.numeric(mean(future_means$pr_delta, na.rm=TRUE)); Pr75 = as.numeric(quantile(future_means$pr_delta, 0.75, na.rm=TRUE)); Pr100 = as.numeric(quantile(future_means$pr_delta, 1, na.rm=TRUE))
+  Tavg0 = as.numeric(quantile(future_means$tavg_delta, 0, na.rm=TRUE)); Tavg25 = as.numeric(quantile(future_means$tavg_delta, 0.25, na.rm=TRUE)) ; Tavg = as.numeric(mean(future_means$tavg_delta, na.rm=TRUE)); Tavg75 = as.numeric(quantile(future_means$tavg_delta, 0.75, na.rm=TRUE)); Tavg100 = as.numeric(quantile(future_means$tavg_delta, 1, na.rm=TRUE))
+  
+  
+  
+  ### Plot for visualization ###
+  if("projection" %in% colnames(hist)) {
+    # Individual models 
+    plot <- ggplot() + geom_point(data=future_means, aes(x=tavg_delta, y=pr_delta, color=projection)) +
+      geom_text_repel(data=future_means, aes(x=tavg_delta, y=pr_delta, label = projection), color = 'black', max.overlaps=Inf) +
+      geom_hline(aes(yintercept=PrAvg), color = "black", linetype='dashed') + geom_vline(aes(xintercept=Tavg), color = "black", linetype='dashed') +
+      labs(title=paste('Changes in climate means by 2050 at',SiteID), x='Change in average temperature [C]', y='Change in annual precipitation [mm]', color='RCP') + 
+      scale_color_manual(values = c(setNames(color_names, model_names))) + nps_theme(); print(plot)
+    jpeg(file=paste0(outLocationPath, "/2050_Climate_Means_Individual.jpg"), width=650, height=500)
+    print(plot)
+    dev.off()
+  } else {
+    # GCM/RCP
+    plot <- ggplot(data=future_means, aes(x=tavg_delta, y=pr_delta, color=rcp)) + geom_point() +
+      geom_text_repel(aes(label = gcm), color = 'black', max.overlaps=Inf) +
+      geom_hline(aes(yintercept=PrAvg), color = "black", linetype='dashed') + geom_vline(aes(xintercept=Tavg), color = "black", linetype='dashed') +
+      geom_rect(aes(xmin = Tavg25, xmax = Tavg75, ymin = Pr25, ymax = Pr75), color = "black", linewidth=1, alpha=0) +
+      labs(title=paste('Changes in climate means by 2050 at',SiteID), x='Change in average temperature [C]', y='Change in annual precipitation [mm]', color='RCP') +
+      scale_color_manual(values = c("rcp45" = "orange", "rcp85" = "red")) + nps_theme(); print(plot)
+    jpeg(file=paste0(outLocationPath, "/2050_Climate_Means.jpg"), width=650, height=500)
+    print(plot)
+    dev.off()
+    
+    # Individual models
+    if(any(!is.na(model_names))){
+      plot <- ggplot() + geom_point(data=(future_means %>% filter(!(projection %in% model_names))), aes(x=tavg_delta, y=pr_delta, color='Other')) +
+        geom_point(data=(future_means %>% filter(projection %in% model_names)), aes(x=tavg_delta, y=pr_delta, color=projection), size=5) + 
+        geom_text_repel(data=future_means %>% filter(!(projection %in% model_names)), aes(x=tavg_delta, y=pr_delta, label = projection), color = 'black', max.overlaps=Inf) +
+        geom_text_repel(data=future_means %>% filter(projection %in% model_names), aes(x=tavg_delta, y=pr_delta, label = projection, color = projection), size=4, max.overlaps=Inf) + 
+        geom_hline(aes(yintercept=PrAvg), color = "black", linetype='dashed') + geom_vline(aes(xintercept=Tavg), color = "black", linetype='dashed') +
+        geom_rect(aes(xmin = Tavg25, xmax = Tavg75, ymin = Pr25, ymax = Pr75), color = "black", linewidth=1, alpha=0) +
+        labs(title=paste('Changes in climate means by 2050 at',SiteID), x='Change in average temperature [C]', y='Change in average precipitation [mm]', color='RCP') + 
+        scale_color_manual(values = c("Other" = "black", setNames(color_names, model_names)), labels=c(setNames(scenario_names, model_names))) + nps_theme(); print(plot)
+      jpeg(file=paste0(outLocationPath, "/2050_Climate_Means_Model_Selection.jpg"), width=650, height=500)
+      print(plot)
+      dev.off()
+    }
+  }
   return(future_means)
 }

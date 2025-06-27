@@ -343,7 +343,7 @@ get_jtemp = function(lat, lon, j.raster){
 # Returns:
 #   Elevation of point, in m
 get_elev_daymet = function(lat, lon, aoi, startY, endY, SiteID_FileName){
-  if(!file.exists(file.path(dataPath, paste0(paste("DayMet", SiteID_FileName, startY+1,endY, sep = "_"), ".csv")))){
+  if(!file.exists(file.path(dataPath, paste0(paste("DayMet", SiteID_FileName, startY+1,endY, "point", sep = "_"), ".csv")))){
     get_daymet_point(SiteID_FileName, startY, endY, lat, lon, dataPath)
   } 
   daymet <- read.csv(file.path(dataPath, paste0(paste("DayMet", SiteID_FileName, startY+1,endY, "point", sep = "_"), ".csv")), skip = 0, header = TRUE, sep = ",")

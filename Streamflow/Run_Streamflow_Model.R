@@ -49,8 +49,8 @@ FolderName = "optim"
 
 ### Define watershed ###
 # centroid of watershed
-SiteID = "Cataloochee"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
-GageSiteID <- '03460000'                  #define stream gage location (RWC: "11460151")
+SiteID = "Little River"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
+GageSiteID <- '03497300'                  #define stream gage location (RWC: "11460151", LR: 03497300, C: 03460000)
 if(provide_coords) lat = 37.9; lon = -122.59 
 
 ### Define time period for historical analysis ###
@@ -202,27 +202,6 @@ DailyWB<- WB(DailyClimData, gw_add, vfm, jrange,hock, hockros, dro, mondro, aspe
              shade.coeff, jtemp,SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon)
 DailyDrain <- Drain(DailyWB, q0, s0, v0, qa, qb, sa, sb, va, vb)
 MeasMod<- MeasModWB(DailyDrain, meas_flow_mon, cutoffYear)
-
-
-# if(!optimization){
-#   # run model
-#   DailyWB<- WB(DailyClimData, gw_add, vfm, jrange,hock, hockros, dro, mondro, aspect, slope,
-#                shade.coeff, jtemp,SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon)
-#   DailyDrain <- Drain(DailyWB, q0, s0, v0, qa, qb, sa, sb, va, vb)
-#   MeasMod<- MeasModWB(DailyDrain, meas_flow_mon, cutoffYear)
-#   nseM = NSE(sim = MeasMod$Mod, obs = MeasMod$Meas)
-#   results = data.frame(results, nseM =nseM, gw_add = gw_add, vfm =vfm,jrange =jrange,hock = hock, hockros =hockros,
-#                        dro =dro, mondro = mondro, aspect = aspect, slope = slope,
-#                        shade.coeff = shade.coeff, jtemp =jtemp, elpTimeM = NA)
-#   
-#   # store results
-#   IHcoeffs <- tibble()
-#   nseD <-  IHACRESFlow(c(qa=qa, qb=qb, sa=sa, sb=sb, va=va), q0, s0, v0, DailyWB, meas_flow_daily, cutoffYear)
-#   results<- data.frame(results, IHcoeffs, elpTimeD=NA)
-#   
-#   # save results as RDS file
-#   saveRDS(results, file = paste0(outLocationPath, "/non_optim_results.rds"))
-# }
 
 
 
