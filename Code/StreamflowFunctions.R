@@ -55,7 +55,7 @@ calc_vb = function(qa, qb, sa, sb, va){
 # Returns:
 #   DailyWB dataframe with @@
 WB <- function(DailyWB, gw_add, vfm , jrange ,hock ,hockros,dro,mondro , aspect, 
-             slope, shade.coeff, jtemp ,SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon){
+             slope, shade.coeff, jtemp ,SWC.Max, aet_slope, aet_bias, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon){
   #add month and day of year columns, GridMet comes with a date column, but the functions below need month and day of year
   DailyWB$month<- as.numeric(format(as.Date(DailyWB$date, format="%Y-%m-%d"),"%m"))
   DailyWB$yday<- yday(DailyWB$date)
@@ -70,14 +70,12 @@ WB <- function(DailyWB, gw_add, vfm , jrange ,hock ,hockros,dro,mondro , aspect,
   DailyWB$W = get_w(DailyWB$MELT, DailyWB$RAIN)
   DailyWB$PET = switch(PETMethod, 
                     Oudin=  {get_OudinPET(doy = DailyWB$yday, lat = lat,snowpack =  DailyWB$PACK, tmean = DailyWB$tmean_C,slope =  slope, aspect = aspect, shade.coeff = shade.coeff)},
-                    #Penman = {ET_PenmanMonteith_daily(DailyWB$date, DailyWB$tmmx, DailyWB$tmmn, DailyWB$srad, DailyWB$vpd, DailyWB$vs, elev, lat)},
-                    #Hamon = {ET_Hamon_daily(DailyWB$tmmx, DailyWB$tmmn, DailyWB$date, lat)}
-                    Penman= {warning("Penman PET Method is not supported yet"); stop()},
-                    Hamon = {warning("Hamon PET Method is not supported yet"); stop()})
+                    Penman = {ET_PenmanMonteith_daily(DailyWB$date, DailyWB$tmmx, DailyWB$tmmn, DailyWB$srad, DailyWB$vpd, DailyWB$vs, elev, lat)},
+                    Hamon = {ET_Hamon_daily(DailyWB$tmmx, DailyWB$tmmn, DailyWB$date, lat)})
   DailyWB$W_PET = get_w_pet(w = DailyWB$W, pet = DailyWB$PET)
   DailyWB$SOIL = get_soil(w = DailyWB$W, swc.0 = Soil.Init, pet = DailyWB$PET, swc.max = SWC.Max,w_pet = DailyWB$W_PET)
   DailyWB$DELTA_SOIL = get_d_soil(DailyWB$SOIL, swc.0 = Soil.Init)
-  DailyWB$AET = get_AET(w = DailyWB$W, pet = DailyWB$PET, swc = DailyWB$SOIL, swc.0 = Soil.Init)
+  DailyWB$AET = get_AET(w = DailyWB$W, pet = DailyWB$PET, swc = DailyWB$SOIL, swc.0 = Soil.Init, aet_slope=aet_slope, aet_bias=aet_bias)
   DailyWB$RUNOFF = get_runoff(w = DailyWB$W, d_soil = DailyWB$DELTA_SOIL, AET = DailyWB$AET, RainDRO = DailyWB$RAINDRO)  # this is W - ET - DELTA_SOIL
   DailyWB$D = get_deficit(pet = DailyWB$PET, AET = DailyWB$AET)
   DailyWB$GDD = get_GDD(tmean = DailyWB$tmean_C, tbase = T.Base)
@@ -147,11 +145,12 @@ MeasModWB = function(DailyDrain, meas_flow_mon, cutoffYear){
 # Returns:
 #   Dataframe (?) of initial drainage coefficients  
 get_Init_Drain_Coef = function(DailyClimData, gw_add, vfm , jtemp , jrange ,hock ,hockros,dro,
-                               mondro , aspect,slope, shade.coeff, SWC.Max,Soil.Init, Snowpack.Init, T.Base, PETMethod,
+                               mondro , aspect,slope, shade.coeff, SWC.Max,
+                               Soil.Init, Snowpack.Init, T.Base, PETMethod,
                                q0, s0, v0, qa, qb, sa, sb, va, vb, lat, lon, cutoffYear){
 
   DailyWB<- WB(DailyClimData, gw_add, vfm, jtemp, jrange, hock, hockros, dro, mondro, aspect, slope, 
-               shade.coeff, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
+               shade.coeff, SWC.Max, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
   DailyDrain <- Drain(DailyWB, q0, s0, v0, qa, qb, sa, sb, va, vb)
   #add a YrMon Column to DailyDrain
   DailyDrain$YrMon<- format(as.Date(DailyDrain$date, format="%Y-%m-%d"),"%Y-%m")
@@ -205,7 +204,7 @@ WB_Optim = function(parms,
   
   # run WB
   DailyWB <- WB(DailyClimData, gw_add, vfm , jrange, hock, hockros, dro, mondro, aspect, 
-               slope, shade.coeff, jtemp, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
+               slope, shade.coeff, jtemp, SWC.Max, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
   
   # run drain
   DailyDrain <- Drain(DailyWB, q0, s0, v0, qa, qb, sa, sb, va, vb)
@@ -234,33 +233,37 @@ WB_Optim = function(parms,
 #   meas_aet_mon: xts ? object containing measured AET at a monthly timestep, from OpenET
 # Returns:
 #   Monthly NSE of modeled streamflow
-WB_Optim_AET = function(parms, Soil.Init, Snowpack.Init, T.Base, PETMethod, DailyClimData, lat, lon, meas_aet_mon){
+WB_Optim_AET = function(parms, Soil.Init, Snowpack.Init, T.Base, PETMethod, DailyClimData, lat, lon, meas_aet, interval){
   gw_add=parms[["gw_add"]]; vfm=parms[["vfm"]]; jrange=parms[["jrange"]];hock=parms[["hock"]];hockros = parms[["hockros"]]
   dro=parms[["dro"]]; mondro=parms[["mondro"]];aspect=parms[["aspect"]]; slope=parms[["slope"]];
-  shade.coeff=parms[["shade.coeff"]]; SWC.Max=parms[["SWC.Max"]]; jtemp=parms[["jtemp"]]
+  shade.coeff=parms[["shade.coeff"]]; SWC.Max=parms[["SWC.Max"]]; aet_slope = parms[["aet_slope"]]; aet_bias  = parms[["aet_bias"]]; jtemp=parms[["jtemp"]]
   
   # run WB
   DailyWB <- WB(DailyClimData, gw_add, vfm , jrange, hock, hockros, dro, mondro, aspect, 
-                slope, shade.coeff, jtemp, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
+                slope, shade.coeff, jtemp, SWC.Max, aet_slope, aet_bias, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
   
   # Aggregate WB AET monthly 
-  Mod <- DailyWB[,c("date","AET")]; colnames(Mod) <- c("date", "Mod AET")
-  #Mod$YrMon <- format(as.Date(Mod$date, format="%Y-%m-%d"),"%Y-%m"); meas_aet_mon$date <- format(as.Date(meas_aet_mon$date),"%Y-%m")
-  #ModAgg <- aggregate(Mod$AET, by=list(Mod$YrMon), FUN=sum)
-  #colnames(ModAgg) <- c("date", "Mod AET")
-  MeasMod <- dplyr::full_join(meas_aet_mon, Mod, by = join_by(date))
-  colnames(MeasMod)<- c("YrMon", "Meas","Mod")
+  if(interval=='monthly'){
+    Mod <- DailyWB %>% mutate(month = floor_date(as.Date(date), "month")) %>%  group_by(month) %>%
+      summarise(Mod = sum(AET, na.rm = TRUE)) %>% rename(date = month)
+  } else if(interval=='daily'){
+    Mod <- DailyWB %>% select(date, AET)
+  }
+  MeasMod <- dplyr::full_join(meas_aet, Mod, by = join_by(date)); colnames(MeasMod)<- c("date", "Meas","Mod")
   MeasMod<- MeasMod[complete.cases(MeasMod),]
   
+  # plot
+  plot <- ggplot(data=MeasMod) + geom_line(aes(x=date, y=Meas), color='black') + geom_line(aes(x=date, y=Mod), color='red')
+  print(plot)
+  
   # calculate monthly NSE
-  x<- MeasMod$Mod
-  y<- MeasMod$Meas
-  nseM = NSE(x, y)
-  Coeffs = data.frame(gw_add=gw_add, vfm= vfm, jrange=jrange, hock =hock, hockros=hockros, dro =dro, mondro = mondro, 
-                      aspect = aspect, slope =slope, shade.coeff=shade.coeff, SWC.Max=SWC.Max, jtemp = jtemp, nseM=nseM)
+  x <- MeasMod$Mod; y<- MeasMod$Meas
+  nse = NSE(x, y)
+  Coeffs = data.frame(gw_add=gw_add, vfm=vfm, jrange=jrange, hock=hock, hockros=hockros, dro=dro, mondro=mondro, 
+                      aspect=aspect, slope=slope, shade.coeff=shade.coeff, SWC.Max=SWC.Max, aet_slope=aet_slope, aet_bias=aet_bias, jtemp=jtemp, nse=nse, interval=interval)
   WBcoeffs <<- rbind(WBcoeffs, Coeffs) # (<<-) is a global assignment operator
-  print(str_c("nseM ", round(nseM, 4)))
-  return(nseM)
+  print(str_c("nse ", interval, " ", round(nse, 4)))
+  return(nse)
 }
 
 
@@ -311,7 +314,7 @@ IHACRES_optim <- function(parms, q0, s0, v0, DailyWB, meas_flow_daily_xts, cutof
 # Only works for data at annual scale, ordered by water year
 # Args:
 # Returns:
-plot_trends <- function(date, value, meas_mk, title, y_label, change_line){
+plot_trends <- function(date, value, title, y_label, change_line){
   meas_sens <- sens.slope(value[!is.na(value)])
   meas_mk <- MannKendall(value)
   if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', meas_mk$sl, meas_sens$estimates)

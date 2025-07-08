@@ -29,7 +29,7 @@ setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setw
 #######################################################################
 ### Set user-defined variables ###
 PETMethod = "Oudin" 
-optimization = FALSE 
+optimization = TRUE 
 delayStart = FALSE 
 NonZeroDrainInitCoeff = FALSE
 incompleteMonths = FALSE 
@@ -37,24 +37,23 @@ GridMET = TRUE
 fillLeapDays = TRUE 
 historical_analysis = TRUE
 future_analysis = TRUE
-calcFutureWB = TRUE  # TRUE to re-run entire water balance model for future; FALSE to use pre-existing CONUS water balance projections from a Mike Tercek spreadsheet
+calcFutureWB = TRUE  
 userSetJTemp = FALSE 
 make_plots = TRUE 
-provide_coords = FALSE # if true, user provides lat/lon coords. if false, lat/lon coords are pulled from centroid of watershed with given gage id
-flow_components = 3  # change the number of components that characterize the flow. can be 2 or 3. 2: flow has quick and slow components; 3: flow has quick, slow, and very slow components.
-percent_skill_cutoff = 0.1 # only include a certain percentage of GCMs, ranked by skill. metric is 0-1
-point_location = FALSE  # if TRUE, pull all meteorological data for a single point (center of watershed). if FALSE, pull data for entire watershed and take average (this takes longer)
+provide_coords = FALSE
+point_location = FALSE
+flow_components = 3
+percent_skill_cutoff = 0.1 
 FolderName = "optim" 
-#filename_future_wb = "\\Users\\mcburns\\OneDrive - DOI\\water-balance\\Data\\LittleRiver\\littleriver_water_balance_future.csv"  # file name for Mike provided future WB
+#filename_future_wb = "\\Users\\mcburns\\OneDrive - DOI\\water-balance\\Data\\LittleRiver\\littleriver_water_balance_future.csv"
 
 ### Define watershed ###
-# centroid of watershed
-SiteID = "Little River"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
-GageSiteID <- '03497300'                  #define stream gage location (RWC: "11460151", LR: 03497300, C: 03460000)
+SiteID = "San Miguel"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
+GageSiteID <- '09172500'                  #define stream gage location (RWC: "11460151", LR: 03497300, C: 03460000)
 if(provide_coords) lat = 37.9; lon = -122.59 
 
 ### Define time period for historical analysis ###
-# for GridMET and stream gage; Daymet period starts one year after this period 
+# GridMET begins in 1970, Daymet begins in 1980 
 startY = 1979; startM = 01; startD = 01 
 endY = 2023; endM = 12; endD = 31
 if(delayStart){ cutoffYear = startY+11 }else{cutoffYear = startY} 
@@ -74,35 +73,35 @@ if(!dir.exists(here('Output', SiteID_FileName, 'Streamflow', FolderName))) {dir.
 
 #######################################################################
 ### Set model variables ###
-# Initial IHACRES flow coefficients
-q0<-0; s0<-0; v0<-0
-if(flow_components==3){
-  qa<-0.62; qb<-0.22; sa<-0.58; sb<-0.06; va<-0.974; vb<-calc_vb(qa,qb,sa,sb,va)
-  #qa<- 1; qb<-0; sa<-1; sb<-0; va<-1; vb<-calc_vb(qa,qb,sa,sb,va)
-}else if(flow_components==2){
-  qa<-0; qb<-0; sa<-0.58; sb<-0.06; va<-0.974; vb<-calc_vb(qa,qb,sa,sb,va) 
-} else{print('invalid number of flow components')}
 
-# default Water Balance variables
-gw_add=0; vfm = 0.7555; jtemp = 1.982841; jrange = 3 ;hock = 4; hockros = 4; 
-dro = 0; mondro = 0; aspect = 180; slope= 0; shade.coeff= 1; SWC.Max = 200
-
-# Water Balance variables not to be optimized
-Soil.Init = SWC.Max; Snowpack.Init = 0; T.Base = 0  
-
-# water balance optimization lower and upper limits
-WB_lower = c(gw_add=0, vfm = 0.25, jrange = 1, hock = 0.25, hockros = 0.25, dro= 0, mondro = 0, aspect= 0, slope =  0, shade.coeff = 0.1, SWC.Max = 10)
-WB_upper = c(gw_add = 1, vfm = 1, jrange = 5, hock = 8, hockros = 8, dro = 1, mondro = 1, aspect = 360, slope = 90, shade.coeff = 1, SWC.Max = 400)
-
-
-
-### Alternatively, read in previously optimized variables from results file
+# Read in previously optimized variables from results file, if they exist
 if(file.exists(paste0(outLocationPath, "/optim_results.rds"))){
   results <- readRDS(paste0(outLocationPath, "/optim_results.rds"))
   gw_add <- results$gw_add; vfm <- results$vfm; jrange <- results$jrange; hock <- results$hock; hockros <- results$hockros; dro <- results$dro; 
   mondro <- results$mondro; aspect <- results$aspect; slope <- results$slope; shade.coeff <- results$shade.coeff; SWC.Max <- results$SWC.Max; 
   jtemp <- results$jtemp; qa <- results$qa; qb <- results$qb; sa <- results$sa; sb <- results$sb; va <- results$va; vb <- results$vb
+
+# If not, manually set variables
+} else {
+  # Default IHACRES flow coefficients
+  if(flow_components==3){
+    qa<-0.62; qb<-0.22; sa<-0.58; sb<-0.06; va<-0.974; vb<-calc_vb(qa,qb,sa,sb,va)
+  }else if(flow_components==2){
+    qa<-0; qb<-0; sa<-0.58; sb<-0.06; va<-0.974; vb<-calc_vb(qa,qb,sa,sb,va) 
+  } else{print('invalid number of flow components')}
+  
+  # Default water balance variables
+  gw_add=0; vfm = 0.7555; jtemp = 1.982841; jrange = 3 ;hock = 4; hockros = 4; 
+  dro = 0; mondro = 0; aspect = 180; slope= 0; shade.coeff= 1; SWC.Max = 200
 }
+
+# Non-optimized WB variables
+Soil.Init = SWC.Max; Snowpack.Init = 0; T.Base = 0 
+
+# Water balance optimization limits
+WB_lower = c(gw_add=0, vfm = 0.25, jrange = 1, hock = 0.25, hockros = 0.25, dro= 0, mondro = 0, aspect= 0, slope =  0, shade.coeff = 0.1, SWC.Max = 10)
+WB_upper = c(gw_add = 1, vfm = 1, jrange = 5, hock = 8, hockros = 8, dro = 1, mondro = 1, aspect = 360, slope = 90, shade.coeff = 1, SWC.Max = 400)
+
 
 
 #######################################################################
@@ -123,7 +122,7 @@ p_slope = 1; p_bias = 0
 
 # Pull watershed shapefile from StreamStats database
 if(!provide_coords){
-  coords <- get_coords(SiteID_FileName, GageSiteID); lat <- coords$lat; lon <- coords$lon; aoi <- coords$geometry
+  coords <- get_coords(SiteID_FileName, GageSiteID); lat <- coords$lat; lon <- coords$lon; elev <- coords$elev; aoi <- coords$geometry
 }
 region <- get_region(lat,lon)
 
@@ -142,10 +141,6 @@ WB_upper = c(WB_upper, jtemp= jtemp+0.5)
 
 # create start and end date objects of data collection. Daymet will start one year after the year listed here
 startDate <- ymd(paste(startY, startM, startD)); endDate <-  ymd(paste(endY, endM, endD))
-
-#get elevation from Daymet data. This happens regardless or whether you use Daymet or GridMET climate data
-elev = get_elev_daymet(lat, lon, aoi, startY, endY, SiteID_FileName)
-
 
 
 #######################################################################
@@ -180,7 +175,7 @@ if(GridMET) {
 #######################################################################
 ### MODEL RUNNING ### 
 
-### Get initial flow conditions ###
+### Get initial flow conditions or set all to 0 ###
 if(NonZeroDrainInitCoeff){
   InitCond <- get_Init_Drain_Coef(DailyClimData, gw_add, vfm , jrange ,hock, hockros,
                                   dro, mondro , aspect, slope, shade.coeff, jtemp, SWC.Max, 
@@ -188,6 +183,8 @@ if(NonZeroDrainInitCoeff){
                                   q0, s0, v0, qa, qb, sa, sb, va, vb, lat, lon, cutoffYear)
   
   q0 = InitCond[["Quick"]]; s0= InitCond[["Slow"]]; v0 = InitCond[["Very_Slow"]]
+} else{
+  q0<-0; s0<-0; v0<-0
 }
 
 
@@ -199,7 +196,7 @@ if(optimization){
 
 ### Run model ###
 DailyWB<- WB(DailyClimData, gw_add, vfm, jrange,hock, hockros, dro, mondro, aspect, slope,
-             shade.coeff, jtemp,SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon)
+             shade.coeff, jtemp,SWC.Max, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon)
 DailyDrain <- Drain(DailyWB, q0, s0, v0, qa, qb, sa, sb, va, vb)
 MeasMod<- MeasModWB(DailyDrain, meas_flow_mon, cutoffYear)
 

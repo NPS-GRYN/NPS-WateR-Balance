@@ -39,22 +39,19 @@ if(make_plots){
   
   # daily
   meas <- coredata(hist_flow_daily$Meas); mod <- coredata(hist_flow_daily$Mod)
-  plot(mod, meas, main ="Daily Average Streamflow", xlab = "Modeled Streamflow (mm)", ylab = "Measured Streamflow (mm)")
-  text(0.25*par("usr")[2], 0.85*par("usr")[4], paste('NSE:',round(NSE(mod, meas),digits=2)), cex = 3)
+  plot(mod, meas, main =paste("Daily Average Streamflow\nNSE:", round(NSE(mod, meas),digits=2)), xlab = "Modeled Streamflow (mm)", ylab = "Measured Streamflow (mm)")
   abline(lm(meas ~ 0 + mod), col= "red")
   abline(lm(meas ~ mod), col= "red")
   
   # monthly
   mod <- MeasMod$Mod; meas <- MeasMod$Meas
-  plot(mod, meas, main ="Monthly Total Streamflow", xlab = "Modeled Streamflow (mm)", ylab = "Measured Streamflow (mm)")
-  text(0.35*par("usr")[2], 0.85*par("usr")[4], paste('NSE:',round(NSE(mod, meas),digits=2)), cex = 3)
+  plot(mod, meas, main =paste("Monthly Total Streamflow\nNSE:", round(NSE(mod, meas),digits=2)), xlab = "Modeled Streamflow (mm)", ylab = "Measured Streamflow (mm)")
   abline(lm(meas ~ 0 + mod), col= "red")
   abline(lm(meas ~ mod), col= "red")
   
   # annual
   mod <- coredata(hist_flow_ann$Mod); meas <- coredata(hist_flow_ann$Meas)
-  plot(mod,meas, main ="Annual Total Streamflow", xlab = "Modeled Streamflow (mm)", ylab = "Measured Streamflow (mm)")
-  text(0.6*par("usr")[2], 0.85*par("usr")[4], paste('NSE:',round(NSE(mod, meas),digits=2)), cex = 3)
+  plot(mod,meas, main =paste("Annual Total Streamflow\nNSE:", round(NSE(mod, meas),digits=2)), xlab = "Modeled Streamflow (mm)", ylab = "Measured Streamflow (mm)")
   abline(lm(meas ~ 0 + mod), col= "red")
   abline(lm(meas ~ mod), col= "red")
   dev.off()

@@ -118,13 +118,14 @@ get_d_soil=function(swc, swc.0=NULL){
 #   swc.0: (optional) The initial soil water content value. Default is 0.
 # Returns:
 #   Time series vector of AET
-get_AET = function(w, pet, swc, swc.0=NULL){
+get_AET = function(w, pet, swc, swc.0=NULL, aet_slope, aet_bias){
   swc.i = ifelse(!is.null(swc.0), swc.0, 0)
   AET = numeric(length(w))
   for(i in 1:length(AET)){
     AET[i] = ifelse(w[i] > pet[i], pet[i], w[i]+swc.i-swc[i])
     swc.i = swc[i]
   }
+  AET <- (AET * aet_slope) + aet_bias
   return(AET)
 }
 
@@ -326,29 +327,4 @@ get_jtemp = function(lat, lon, j.raster){
   sp = sp::SpatialPoints(coords, proj4string = projection)
   jtemp = raster::extract(j.raster, sp)
   return(jtemp)
-}
-
-# Extract elevation for given location using DayMet dataset
-# Update: function did not exist before 
-# Note, if the format of the DayMet data changes, this function may not perform correctly
-# It relies on the elevation being in a specific row and column and having specific text around it
-# not actually sure what the purpose of this function is
-# Args:
-#   lat: Latitude of the site (degrees).
-#   lon: Longitude of the site (degrees).
-#   aoi: Shapefile of the basin
-#   startY: First year to get data for (cannot be earlier than 1980)
-#   endY: Last year to get data for (cannot be later than the most recent completed calendar year)
-#   SiteID_FileName:
-# Returns:
-#   Elevation of point, in m
-get_elev_daymet = function(lat, lon, aoi, startY, endY, SiteID_FileName){
-  if(!file.exists(file.path(dataPath, paste0(paste("DayMet", SiteID_FileName, startY+1,endY, "point", sep = "_"), ".csv")))){
-    get_daymet_point(SiteID_FileName, startY, endY, lat, lon, dataPath)
-  } 
-  daymet <- read.csv(file.path(dataPath, paste0(paste("DayMet", SiteID_FileName, startY+1,endY, "point", sep = "_"), ".csv")), skip = 0, header = TRUE, sep = ",")
-  chars <- "Elevation: "
-  chars2 <- " meters"
-  elev <- as.numeric(gsub(chars2,"" , gsub(chars, '', daymet[3,1])))
-  return(elev)
 }

@@ -56,7 +56,7 @@ if(calcFutureWB){
       print(proj)
       ClimData <- future_climate %>% filter(projection==proj) %>% select(-projection)
       DailyWB_future <- WB(ClimData, gw_add, vfm, jrange, hock, hockros, dro, mondro, aspect, slope,
-                           shade.coeff, jtemp, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
+                           shade.coeff, jtemp, SWC.Max, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
       wb_list[[i]] <- cbind(proj, DailyWB_future)
       i <- i + 1
     }
@@ -342,8 +342,7 @@ if(make_plots){
 
 
 #######################################################################
-### PLOT FUTURE STREAMFLOW FOR IDENTIFIED MODELS ###
-num_models <- length(model_names)
+### PLOT FUTURE STREAMFLOW FOR CLIMATE FUTURES ###
 
 ### Heatmap - daily
 daily_df <- daily_df %>% group_by(water_year) %>% mutate(water_day = (as.integer(difftime(date,ymd(paste0(water_year - 1 ,'-09-30')), units = "days"))))
@@ -734,3 +733,35 @@ dev.off()
 
 
 
+#######################################################################
+### Non-streamflow metrics ###
+
+# Calculate runoff efficiency
+runoff_efficiency <- daily_df %>% group_by(water_year, projection) %>% dplyr::summarize(projection=first(projection), ann_runoff=sum(adj_runoff))
+hist_p <- DailyClimData %>% mutate(water_year = sapply(date, get_water_year)) %>% group_by(water_year) %>% dplyr::summarize(ann_p=sum(pr)) %>% mutate(projection='Historical') %>% filter(water_year != 2023)
+fut_p <- future_climate %>% mutate(water_year = sapply(date, get_water_year)) %>% group_by(water_year, projection) %>% dplyr::summarize(projection=first(projection), ann_p=sum(pr))
+runoff_efficiency <- runoff_efficiency %>% full_join(bind_rows(hist_p, fut_p), by = c('water_year', 'projection'))
+runoff_efficiency$efficiency <- runoff_efficiency$ann_runoff / runoff_efficiency$ann_p
+
+# Plot
+plot_list <- list()
+for (i in 1:length(model_names)){
+  proj = model_names[i]
+  scenario <- scenario_names[i]
+  
+  analysis_df <- runoff_efficiency %>% filter(projection=='Historical' | projection==proj) %>% filter(water_year != 2100)
+  mod_mk <- MannKendall(analysis_df$efficiency)
+  mod_sens <- sens.slope(analysis_df$efficiency[!is.na(analysis_df$efficiency)])
+  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
+  plot_mod <- ggplot(analysis_df, aes(x = water_year, y = efficiency, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+    labs(x = "Water Year", y = "Runoff Efficiency (%)", title = paste(scenario, "Runoff Efficiency"), color='') +
+    nps_theme() + theme(legend.position = 'bottom') + scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) +
+    annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$efficiency), label = label, color = "black", hjust = 1, vjust = 1) 
+  print(plot_mod)
+  plot_list[[i]] <- plot_mod
+}
+jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_RunoffEffiency_Trends.jpg"), width=300*num_models, height=200*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+dev.off()

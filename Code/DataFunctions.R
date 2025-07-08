@@ -3,9 +3,8 @@
 # and calibrate the water balance and IHACRES streamflow models.
 #
 # EDITS IN PROGRESS
-# function for pulling Mike Tercek's water balance data (website currently appears to be down?)
-# add functions for pulling data for aoi (not point): MACA, gridmet/daymet, openET
-# once both of those are done, figure out how to pull Mike data and calculate watershed average (if that's feasible)
+# area averaged functions for: gridded WB data from Mike Tercek's website, openET
+# check daymet and maca area averaged functions
 # finish documentation
 # ---------------------------------------------------------------------
 
@@ -16,7 +15,7 @@ if(!lib_install){
   library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse); library(RColorBrewer)
   library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
   library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table); library(plotly)
-  library(tseries); library(dgof); library(wql); library(trend); library(parallel); library(purrr)
+  library(tseries); library(dgof); library(wql); library(trend); library(parallel); library(purrr); library(elevatr); library(DEoptim)
   lib_install <- TRUE
 }
 
@@ -65,7 +64,8 @@ get_coords <- function(SiteID_FileName, GageSiteID){
   centroid <- st_centroid(aoi)
   centroid_coords <- st_coordinates(st_transform(centroid, crs = 4326))
   lat <<- centroid_coords[1,'Y']; lon <<- centroid_coords[1,'X']
-  return(data.frame(lat=lat, lon=lon, aoi=st_geometry(aoi)))
+  elev <- get_elev_point(st_sf(geometry=centroid), src = "aws")$elevation
+  return(data.frame(lat=lat, lon=lon, elev=elev, aoi=st_geometry(aoi)))
 }
 
 
@@ -159,6 +159,7 @@ get_gridmet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath,
   # Scrape data and save
   if(!file.exists(file.path(dataPath, paste0(paste("GridMET", SiteID_FileName, startY, endY, 'point', sep = "_" ), '.csv')))){
     # Scrape data
+    if(endDate < 1979) endDate <- 1979
     aoi <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
     GridMET_vars <- c("pr", "srad","tmmn", "tmmx", "vpd", "vs")
     DailyClimData <- getGridMET(aoi, varname = GridMET_vars,startDate = startDate, endDate = endDate,verbose = TRUE)
@@ -199,6 +200,7 @@ get_gridmet_area <- function(SiteID_FileName, startY, endY, aoi, dataPath,
   # Scrape data and save
   if(!file.exists(file.path(dataPath, paste0(paste("GridMET", SiteID_FileName, startY, endY, 'area', sep = "_" ), '.csv')))){
     # Scrape data
+    if(endDate < 1979) endDate <- 1979
     GridMET_vars <- c("pr", "srad","tmmn", "tmmx", "vpd", "vs")
     climate_data <- getGridMET(aoi, varname = GridMET_vars,startDate = startDate, endDate = endDate,verbose = TRUE)
     
@@ -252,6 +254,7 @@ get_daymet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath){
   # Scrape data and save
   if(!file.exists(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY+1,endY, "point", sep = "_"), ".csv")))){
     # Scrape data
+    if(endDate < 1980) endDate <- 1980
     point <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
     DailyClimData <- getDaymet(point, startDate = startDate, endDate = endDate,verbose = TRUE)
     
@@ -308,6 +311,7 @@ get_daymet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath){
 get_daymet_area <-  function(SiteID_FileName, startY, endY, aoi, dataPath){
   if(!file.exists(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY+1,endY, "area", sep = "_"), ".csv")))){
     # Scrape data
+    if(endDate < 1980) endDate <- 1980
     clim_data <- getDaymet(aoi, startDate = startDate, endDate = endDate,verbose = TRUE)
     clim_data$date <- as.Date(clim_data$date)
     
@@ -608,7 +612,7 @@ get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
   # Return file if it exists
   if(file.exists(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))){
     future_wb <- read.csv(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))
-    future_wb$date <- as.Date(future_wb$date, '%d/%m/%Y')
+    future_wb$date <- as.Date(future_wb$date)
     # not sure if I need this
     #future_wb$adj_runoff<- get_adj_runoff(future_wb$runoff, gw_add = gw_add, vfm = vfm)
     return(future_wb)
@@ -660,6 +664,7 @@ get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
     future_wb$date <- as.Date(future_wb$date)
     future_wb$projection <- paste(future_wb$GCM, future_wb$RCP, sep='.')
     future_wb <- subset(future_wb, select = -c(latitude, longitude, GCM, RCP))
+    colnames(future_wb_conus)<- c("date", "projection", "deficit", "AET", "soil_water", "runoff", "rain", "accumswe", "PET")
     
     # Convert from mm to in 
     future_wb <- future_wb %>% dplyr::mutate(across(where(is.numeric), ~ . / 25.4))
@@ -667,7 +672,7 @@ get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
     # Get adjusted runoff
     future_wb$adj_runoff<- get_adj_runoff(future_wb$runoff, gw_add = gw_add, vfm = vfm)
   }
-  write.csv(future_wb, file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))
+  write.csv(future_wb, file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")), row.names=FALSE)
   return(future_wb)
 }
 
@@ -681,7 +686,7 @@ get_conus_wb_direct <- function(SiteID_FileName, dataPath, filename){
     # Clean: fix date, convert to mm, fix column names
     future_wb_conus <- future_wb_conus %>% rename(date = Date); future_wb_conus$date <- as.Date(future_wb_conus$date)
     future_wb_conus<-cbind(future_wb_conus[,c("date","GCM")], 25.4*(future_wb_conus[,c(which(colnames(future_wb_conus)=="Deficit.in"):ncol(future_wb_conus))]))
-    colnames(future_wb_conus)<- c("date", "projection", "Deficit", "AET", "soil_water", "runoff", "rain", "accumswe", "PET")
+    colnames(future_wb_conus)<- c("date", "projection", "deficit", "AET", "soil_water", "runoff", "rain", "accumswe", "PET")
     #future_wb<-subset(future_wb, projection !="MIROC-ESM-CHEM.rcp85")   # drop "MIROC-ESM-CHEM.rcp85" because it doesn't have an associated RCP 4.5  
     
     # adjust for ground water addition and volume forcing multiplier
@@ -697,30 +702,37 @@ get_conus_wb_direct <- function(SiteID_FileName, dataPath, filename){
 
 
 # Pull OpenET data for a single point
-# AET
-get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileName, interval, dataPath){
-  file_path <- here('Data', SiteID_FileName, paste0(paste("OpenET", interval, SiteID_FileName, startY, endY, sep = "_" ), '.csv'))
-  if(!file.exists(file_path)){
+# can be ETo or measured ET (AET)
+get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileName, interval, var, dataPath){
+  # check start year for daily data
+  if(interval=='daily' & startY < 2016){startY <- 2016}
+  
+  if(!file.exists(here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, sep = "_" ), '.csv')))){
     header <- add_headers(accept = 'application/json', Authorization = api_key, content_type = 'application/json')
     
-    # get data
+    # Get data from OpenET website
     args <- list(date_range = c(paste(startY, sprintf("%02d", startM), sprintf("%02d", startD), sep='-'),
                                 paste(endY, sprintf("%02d", endM), sprintf("%02d", endD), sep='-')),
-                 interval = interval,geometry = c(lon, lat), model = "Ensemble", variable = "ET", reference_et = "gridMET",
-                 units = "mm", file_format = "JSON")
+                 file_format = "JSON", geometry = c(lon, lat), interval = interval, model = "Ensemble", reference_et = "gridMET",
+                 units = "mm", variable = var)
     response <- POST(url = "https://openet-api.org/raster/timeseries/point", header, body = args, encode = "json")
     
-    # Check if request was successful
+    # Check if request was successful and retry with different date range if not
+    while(response$status_code != 200 & startY != endY){
+        startY <- startY+1
+        args$date_range <- c(paste(startY, sprintf("%02d", startM), sprintf("%02d", startD), sep='-'), paste(endY, sprintf("%02d", endM), sprintf("%02d", endD), sep='-'))
+        response <- POST(url = "https://openet-api.org/raster/timeseries/point", header, body = args, encode = "json")
+    }
     if(response$status_code == 200){
       ET <- data.frame(fromJSON(content(response, as = "text", encoding = "UTF-8")))
       colnames(ET) <- c('date', 'Meas ET')
       ET$date <- as.Date(ET$date)
-      write.csv(ET, file_path, row.names=FALSE)
+      write.csv(ET, here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, sep = "_" ), '.csv')), row.names=FALSE)
     } else{
-      print(paste('No', interval, 'OpenET data for that region or time period. Optimization cannot occur.')); stop()
+      print(paste('No', interval, var, 'OpenET data for that region or time period. Optimization cannot occur.')); stop()
     }
   } else {
-    ET <- read.csv(file_path)
+    ET <- read.csv(here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, sep = "_" ), '.csv')))
     ET$date <- as.Date(ET$date)
   }
   return(ET)
@@ -770,57 +782,33 @@ ID.redundant.gcm <- function(PCA){
 # make this function better and not just storage for other code
 select_climate_futures <- function(){
   #if(!file.exists(here('Data', SiteID_FileName, paste0(paste('Future_TP_Means',SiteID_FileName, sep='_'), ".csv")))){
-    ### Pull and aggregate meteorological data ###
-    # historical
-    # hist_climate_ann <- as.data.frame(DailyClimData %>% group_by(year(date)) %>%
-    #                                     dplyr::summarize(year=first(year(date)), pr = sum(pr, na.rm = TRUE),
-    #                                                      tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
-    # hist_climate_ann$t_avg <- (hist_climate_ann$tmmn + hist_climate_ann$tmmx) / 2
-    # 
+    ### Pull meteorological data ###
     # future
     if(point_location){
       future_climate <- get_maca_point(lat, lon, SiteID_FileName)
     } else{
       future_climate <- get_maca_area(aoi, SiteID_FileName)
     }
-    # future_climate_ann <- as.data.frame(future_climate %>% group_by(projection, year(date)) %>%
-    #                                       dplyr::summarize(projection=first(projection), year=first(year(date)), pr = sum(pr, na.rm = TRUE),
-    #                                                        tmmn = mean(tmmn, na.rm = TRUE), tmmx = mean(tmmx, na.rm = TRUE)))
-    # future_climate_ann$t_avg <- (future_climate_ann$tmmn + future_climate_ann$tmmx) / 2
-    # 
-    # # calculate averages over historical period
-    # hist_avg_precip <- mean(hist_climate_ann$pr, na.rm=TRUE); hist_avg_tavg <- mean(hist_climate_ann$t_avg, na.rm=TRUE)
-    # 
-    # # calculate averages over future period (30 yr average centered around 2050: 2035-2065)
-    # # something is wrong: mismatch in magnitude between historical + future precip
-    # # probably an error in get_maca_point :(
-    # future_means <- future_climate_ann %>% filter(year >= 2035 & year <= 2065) %>% group_by(projection) %>% 
-    #   dplyr::summarize(pr=mean(pr, na.rm=TRUE), t_avg=mean(t_avg, na.rm=TRUE))
-    # future_means <- future_means %>% mutate(pr_delta=pr-hist_avg_precip, tavg_delta=t_avg-hist_avg_tavg)
-    # future_centroid_pr <- mean(future_means$pr_delta)
-    # future_centroid_tavg <- mean(future_means$tavg_delta)
-    # 
-    # # Create individual columns for gcm/rcp
-    # future_means$gcm <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 1)
-    # future_means$rcp <- sapply(strsplit(future_means$projection, split = "\\."), `[`, 2)
-    # 
-    # # Calculate quantiles
-    # Pr0 = as.numeric(quantile(future_means$pr_delta, 0)); Pr25 = as.numeric(quantile(future_means$pr_delta, 0.25)); PrAvg = as.numeric(mean(future_means$pr_delta)); Pr75 = as.numeric(quantile(future_means$pr_delta, 0.75)); Pr100 = as.numeric(quantile(future_means$pr_delta, 1))
-    # Tavg0 = as.numeric(quantile(future_means$tavg_delta, 0)); Tavg25 = as.numeric(quantile(future_means$tavg_delta, 0.25)) ; Tavg = as.numeric(mean(future_means$tavg_delta)); Tavg75 = as.numeric(quantile(future_means$tavg_delta, 0.75)); Tavg100 = as.numeric(quantile(future_means$tavg_delta, 1))
-    # 
-    # 
-    # ### Plot for visualization ###
-    # plot <- ggplot(data=future_means, aes(x=tavg_delta, y=pr_delta, color=rcp)) + geom_point() +
-    #   geom_text_repel(aes(label = gcm), color = 'black', max.overlaps=Inf) +
-    #   geom_hline(aes(yintercept=PrAvg), color = "black", linetype='dashed') + geom_vline(aes(xintercept=Tavg), color = "black", linetype='dashed') +
-    #   geom_rect(aes(xmin = Tavg25, xmax = Tavg75, ymin = Pr25, ymax = Pr75), color = "black", linewidth=1, alpha=0) +
-    #   labs(title=paste('Changes in climate means by 2050 at',SiteID), x='Change in annual average temperature [C]', y='Change in annual average precipitation [mm]', color='RCP') + 
-    #   scale_color_manual(values = c("rcp45" = "orange", "rcp85" = "red")) + nps_theme()
-    # jpeg(file=paste0(outLocationPath, "/2050_Climate_Means.jpg"), width=650, height=500)
-    # print(plot)
-    # dev.off()
   
-    future_means <- plot_climate_futures(DailyClimData, future_climate, NA)
+    # historical
+    if(GridMET) {
+      if(point_location){
+        hist_climate <- get_gridmet_point(SiteID_FileName, startY, endY, lat, lon, dataPath,
+                                           tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope)
+      } else {
+        hist_climate <- get_gridmet_area(SiteID_FileName, startY, endY, aoi, dataPath,
+                                          tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope)
+      }
+    } else { 
+      if(point_location){
+        hist_climate <- get_daymet_point(SiteID_FileName, startY, endY, lat, lon, dataPath)
+      } else{
+        hist_climate <- get_daymet_area(SiteID_FileName, startY, endY, aoi, dataPath)
+      }
+    }
+  
+    ### Call function to calculate and plot future means ### 
+    future_means <- plot_climate_futures(hist_climate, future_climate, NA)
     
     Pr0 = as.numeric(quantile(future_means$pr_delta, 0)); Pr25 = as.numeric(quantile(future_means$pr_delta, 0.25)); PrAvg = as.numeric(mean(future_means$pr_delta)); Pr75 = as.numeric(quantile(future_means$pr_delta, 0.75)); Pr100 = as.numeric(quantile(future_means$pr_delta, 1))
     Tavg0 = as.numeric(quantile(future_means$tavg_delta, 0)); Tavg25 = as.numeric(quantile(future_means$tavg_delta, 0.25)) ; Tavg = as.numeric(mean(future_means$tavg_delta)); Tavg75 = as.numeric(quantile(future_means$tavg_delta, 0.75)); Tavg100 = as.numeric(quantile(future_means$tavg_delta, 1))

@@ -28,7 +28,7 @@ parms<- c(gw_add = gw_add, vfm = vfm, jrange = jrange, hock =  hock, hockros = h
 
 #run the optimization routine
 strtTimeM <-Sys.time()
-set.seed(123) #this ensures reproducibility each time
+set.seed(123)
 WBcoeffs <- tibble()
 
 # Use genetic algorithm (GA) for optimization
@@ -96,7 +96,7 @@ if(make_plots){
 
 #Re run the Water Balance model as an input for the second optimization with the optimized water balance variables
 DailyWB<- WB(DailyClimData, gw_add, vfm, jrange, hock, hockros, dro, mondro, aspect, slope,
-             shade.coeff, jtemp,SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon)
+             shade.coeff, jtemp,SWC.Max, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon)
 
 # Define variables for optimization
 IHACRES_lower <- c(l_qa=0, l_qb=0, l_sa=0, l_sb=0, l_va=0)
@@ -155,6 +155,8 @@ qa=optValuesD$qa; qb=optValuesD$qb; sa=optValuesD$sa; sb=optValuesD$sb; va=optVa
 results<- data.frame(results, qa=optValuesD$qa, qb=optValuesD$qb, sa=optValuesD$sa, sb=optValuesD$sb, va=optValuesD$va, vb=optValuesD$vb, nseD=optDaily$value, elpTimeD=elpTimeD)
 saveRDS(IHcoeffs, file = paste0(outLocationPath, "/IHcoeffs_final.rds"))
 
+# print time
+print(paste("Total time:", elpTimeD))
 
 ### Plot optimized IHACRES values
 if(make_plots){
