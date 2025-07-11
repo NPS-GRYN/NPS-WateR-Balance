@@ -30,7 +30,8 @@ sapply(list.files(pattern="*.R"), source, .GlobalEnv); setwd(here())
 #######################################################################
 ### Set user-defined variables ###
 PETMethod = "Oudin" 
-optimization = TRUE 
+optimization = TRUE
+optimization_var = 'AET'
 delayStart = TRUE 
 incompleteMonths = FALSE 
 GridMET = TRUE
@@ -51,11 +52,14 @@ filename = ''
 # must be west of approximately -90 longitude to have OpenET data
 SiteID = "Redwood Creek"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
 GageSiteID <- '11460151'        # USGS stream gage 
-if(provide_coords){
-  aoi <- ""
-  lat = 37.9 
-  lon = -122.59 
+
+### Provide geographic data or pull shapefile from StreamStats database ###
+if(provide_coords) {
+  lat = 37.9; lon = -122.59; aoi <- st_read("")  # add path to shapefile
+} else{
+  coords <- get_coords(SiteID_FileName, GageSiteID); lat <- coords$lat; lon <- coords$lon; elev <- coords$elev; aoi <- coords$geometry
 }
+region <- get_region(lat,lon)
 
 ### Define time period for historical analysis ###
 # for GridMET and stream gage; Daymet period starts one year after this period 
@@ -76,12 +80,17 @@ individual_models = c('BNU-ESM.rcp45')
 # Default water balance variables
 gw_add=0; vfm = 0.7555; jtemp = 1.982841; jrange = 3; hock = 4; hockros = 4; 
 dro = 0; mondro = 0; aspect = 180; slope= 0; shade.coeff= 1; SWC.Max = 200
-aet_slope = 1; aet_bias = 0
+et_slope = 1; et_bias = 0
 Soil.Init = SWC.Max; Snowpack.Init = 0; T.Base = 0  
 
+# Get j_temp
+if(!userSetJTemp){
+  j.raster = raster(here('Data', "merged_jennings.tif"))
+  jtemp = get_jtemp(lat = lat, lon= lon, j.raster = j.raster)}
+
 # Water balance optimization lower and upper limits
-WB_lower = c(gw_add=0, vfm = 0.25, jrange = 1, hock = 0.25, hockros = 0.25, dro= 0, mondro = 0, aspect= 0, slope =  0, shade.coeff = 0.1, SWC.Max = 10, aet_slope=-10, aet_bias=-5)
-WB_upper = c(gw_add = 1, vfm = 1, jrange = 5, hock = 8, hockros = 8, dro = 1, mondro = 1, aspect = 360, slope = 90, shade.coeff = 1, SWC.Max = 400, aet_slope=10, aet_bias=5)
+WB_lower = c(gw_add=0, vfm = 0.25, jrange = 1, hock = 0.25, hockros = 0.25, dro= 0, mondro = 0, aspect= 0, slope =  0, shade.coeff = 0.1, SWC.Max = 10,  jtemp = jtemp-0.5, et_slope=-5, et_bias=-5)
+WB_upper = c(gw_add = 1, vfm = 1, jrange = 5, hock = 8, hockros = 8, dro = 1, mondro = 1, aspect = 360, slope = 90, shade.coeff = 1, SWC.Max = 400,  jtemp = jtemp+0.5, et_slope=5, et_bias=5)
 
 
 #######################################################################
@@ -105,23 +114,7 @@ if(!dir.exists(here('Data', SiteID_FileName))) {dir.create(here('Data', SiteID_F
 if(!dir.exists(here('Output', SiteID_FileName))) {dir.create(here('Output', SiteID_FileName))}
 if(!dir.exists(here('Output', SiteID_FileName, 'WaterBalance'))) {dir.create(here('Output', SiteID_FileName, 'WaterBalance'))}
 if(!dir.exists(here('Output', SiteID_FileName, 'WaterBalance', FolderName))) {dir.create(here('Output', SiteID_FileName,'WaterBalance', FolderName))}; outLocationPath = here('Output', SiteID_FileName, 'WaterBalance', FolderName)
-
-# Pull watershed shapefile from StreamStats database
-# figure out format / how to assign variables
-if(!provide_coords){
-  coords <- get_coords(SiteID_FileName, GageSiteID); lat <- coords$lat; lon <- coords$lon; elev <- coords$elev; aoi <- coords$geometry
-}
-region <- get_region(lat,lon)
-
-# Get j_temp
-if(!userSetJTemp){
-  j.raster = raster(here('Data', "merged_jennings.tif"))
-  jtemp = get_jtemp(lat = lat, lon= lon, j.raster = j.raster)}
-
-#define lower and upper boundaries for jtemp
-WB_lower = c(WB_lower, jtemp = jtemp-0.5) 
-WB_upper = c(WB_upper, jtemp= jtemp+0.5)
-
+  
 # create start and end date objects of data collection. Daymet will start one year after the year listed here
 startDate<- ymd(paste(startY, startM, startD)); endDate<-  ymd(paste(endY, endM, endD))
 
@@ -154,7 +147,7 @@ MonthlyET <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileN
 DailyET <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', 'ET', dataPath)
 
 MonthlyETo <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', 'ETo', dataPath)
-DailyETo <- get_et_point(startY_daily, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', 'ETo', dataPath)
+DailyETo <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', 'ETo', dataPath)
 
 
 
@@ -162,112 +155,33 @@ DailyETo <- get_et_point(startY_daily, startM, startD, endY, endM, endD, SiteID_
 #######################################################################
 ### OPTIMIZATION ###
 
-### First optimization: optimize water balance variables according to the NSE of AET/openET over historical period ###
+### Optimize water balance variables according to the NSE of AET/openET over historical period ###
 # need new function
-if(optimization){
-  # Create file for results
-  results <- data.frame(SiteID = SiteID, start = startDate, end = endDate, PETMethod = PETMethod, optimization = optimization,
-                        GridMET = GridMET, lon = lon, lat = lat,
-                        startY = startY, startM = startM, startD = startD, endY = endY, endM = endM, endD = endD,
-                        incompleteMonths = incompleteMonths)
-  
-  parms<- c(gw_add = gw_add, vfm = vfm, jrange = jrange, hock =  hock, hockros = hockros,dro = dro, mondro = mondro,
-            aspect = aspect,slope= slope, shade.coeff= shade.coeff, SWC.Max = SWC.Max, aet_slope=aet_slope, aet_bias=aet_bias, jtemp = jtemp)
-  
-  # Run optimization routine
-  strtTimeM <-Sys.time()
-  #set.seed(123) 
-  WBcoeffs <- tibble()
-  
-  # try GA - monthly time scale to smooth out errors
-  # returned value is labeled as l_par - not sure why???
-  optMonth_init <- ga(type = "real-valued", fitness = function(x)
-    WB_Optim_AET(c(gw_add=x[1], vfm=x[2], jrange=x[3], hock=x[4], hockros=x[5], dro=x[6], mondro=x[7], aspect=x[8], slope=x[9], shade.coeff=x[10], SWC.Max=x[11], aet_slope=x[12], aet_bias=x[13], jtemp=x[14]),
-             Soil.Init = Soil.Init, Snowpack.Init = Snowpack.Init, T.Base = T.Base, PETMethod= PETMethod,
-             DailyClimData = DailyClimData, lat=lat, lon=lon, meas_aet = MonthlyET, interval='monthly'),
-    lower=WB_lower, upper=WB_upper, popSize=200, maxiter=100, pmutation = 0.2, pcrossover = 0.8, elitism = 10, run = 50, monitor = TRUE )
-
-  # see if DEoptim produces better optimization results
-  #optMonth_init <- DEoptim(fn=function(x) -WB_Optim_AET(c(gw_add=x[1], vfm=x[2], jrange=x[3], hock=x[4], hockros=x[5], dro=x[6], mondro=x[7], aspect=x[8], slope=x[9], shade.coeff=x[10], SWC.Max=x[11], aet_slope=x[12], aet_bias=x[13], jtemp=x[14]), 
-  #                                                                Soil.Init = Soil.Init, Snowpack.Init = Snowpack.Init, T.Base = T.Base, PETMethod= PETMethod, 
-  #                                                                DailyClimData = DailyClimData, lat=lat, lon=lon, meas_aet = MonthlyET, interval='monthly'), 
-  #                         lower=WB_lower, upper=WB_upper,  control = DEoptim.control(VTR=0.9, NP = 200, itermax = 100, trace = TRUE))
-  elpTimeM <- Sys.time() - strtTimeM
-  
-  # Define the water balance variables from the best run
-  optValuesM <- data.frame(nseM = optMonth_init@fitnessValue, optMonth_init@solution)
-  #optValuesM <- as.data.frame(t(optMonth_init$optim$bestmem)); colnames(optValuesM) <- c('gw_add','vfm','jrange','hock','hockros','dro','mondro','aspect','slope','shade.coeff','SWC.Max','aet_slope','aet_bias','jtemp')
-  #optValuesM <- optValuesM %>% mutate(nseM = optMonth_init$optim$bestval)
-  gw_add=optValuesM$gw_add; vfm=optValuesM$vfm; jrange=optValuesM$jrange; hock=optValuesM$hock
-  hockros=optValuesM$hockros; dro=optValuesM$dro; mondro=optValuesM$mondro; aspect=optValuesM$aspect
-  slope=optValuesM$slope; shade.coeff=optValuesM$shade.coeff; SWC.Max=optValuesM$SWC.Max
-  aet_slope=optValuesM$aet_slope; aet_bias=optValuesM$aet_bias; jtemp=optValuesM$jtemp
-  
-  # store and save results
-  results = data.frame(results, optValuesM, elpTimeM = elpTimeM)
-  saveRDS(WBcoeffs, file = paste0(outLocationPath, "/WBcoeffs.rds"))
-  
-  # print time
-  print(paste("Time elapsed:", elpTimeM))
-  
-  ### PLOTS
-  if(make_plots){
-    if (dev.cur() != 1) dev.off()
-    # Parallel coordinates plot of WB coeffs
-    jpeg(file=paste0(outLocationPath, "/", "WB_Coeffs_ParallelCoords.jpg"), width=1600, height=800, res=100)
-    print(ggparcoord(data=WBcoeffs, columns=1:14, groupColumn=15, scale="uniminmax") + 
-            scale_color_gradient(low = "black", high = "gray90") + nps_theme()) # for red: "darkred" and "#fee5d9"
-    dev.off()
-    
-    # Scatterplots of WB coeffs
-    WBcoeffs_long <- reshape(WBcoeffs, varying = names(WBcoeffs)[1:14], v.names = "WBcoeffs", timevar = "Variable", 
-                             times = names(WBcoeffs)[1:14], direction = "long")
-    jpeg(file=paste0(outLocationPath, "/", "WB_Coeffs_Scatter.jpg"), width=800, height=500)
-    print(ggplot(WBcoeffs_long, aes(x = WBcoeffs, y = nse)) + geom_point() +
-            facet_wrap(~ Variable, scales = 'free') + nps_theme() +
-            labs(title = 'Water Balance Coefficients', x='', y = 'Monthly NSE'))
-    dev.off()
-    
-    # Range plot of optimal WB coeffs
-    wb_optim <- data.frame(var=c('Groundwater Addition', 'Volume Forcing Multiplier', 'Jennings Temperature Range','Hock','Hock Rain on Snow','Direct Runoff','Mondro','Aspect','Slope','Shade Coefficient','Max Soil Water Content','AET Slope','AET Bias','Jennings Temperature'),
-                           value=c(gw_add, vfm, jrange, hock, hockros, dro, mondro, aspect, slope, shade.coeff, SWC.Max, aet_slope, aet_bias, jtemp),
-                           lower=WB_lower, upper=WB_upper)
-    jpeg(file=paste0(outLocationPath, "/", "WB_Optim_Coefficients.jpg"), width=800, height=600); par(mfrow = c(3, 5))
-    for (i in 1:14){
-      len <- ceiling(wb_optim$upper[i])-floor(wb_optim$lower[i])
-      plot(c(wb_optim$lower[i], wb_optim$upper[i]), c(0, 0), type = "n", xlab = "", ylab = "",
-           main = wb_optim$var[i], xlim = range(c(wb_optim$lower[i]-(len/5), wb_optim$upper[i]+(len/5))), ylim = c(-1, 1), xaxt = "n", yaxt = "n")
-      segments(wb_optim$lower[i], 0, wb_optim$upper[i], 0, col = "black", lwd = 2)
-      points(wb_optim$value[i], 0, col = "red", pch = 19, cex = 1.5)
-      text(wb_optim$value[i], 0.3, sprintf("%.2f", wb_optim$value[i]), col='red')
-      axis(1, at = seq(floor(wb_optim$lower[i]), ceiling(wb_optim$upper[i]), by=(len/5)))
-    }
-    dev.off()
-  }
-}
-
+if(optimization) source('WaterBalance//WB_Optimization.R')
 
 
 #######################################################################
 #######################################################################
 ### Run model  ###
 DailyWB <- WB(DailyClimData, gw_add, vfm, jrange,hock, hockros, dro, mondro, aspect, slope,
-               shade.coeff, jtemp,SWC.Max, aet_slope, aet_bias, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon)
+               shade.coeff, jtemp,SWC.Max, et_slope, et_bias, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon, optimization_var)
 
 
 
 #######################################################################
 #######################################################################
-##### MODEL PERFORMANCE ON HISTORICAL ET DATA #####
-# EDIT
+##### MODEL PERFORMANCE ###
+
+#######################################################################
+### HISTORICAL AET #####
 
 # Daily, monthly, annual aggregation with measured and modeled ET
-hist_et_daily <- merge(xts(with(DailyWB, cbind(AET)), order.by = as.Date(DailyWB$date)), DailyET); hist_et_daily <- hist_et_daily[complete.cases(hist_et_daily),]
-colnames(hist_et_daily) <- c("Mod", "Meas")
-hist_et_monthly <- apply.monthly(xts(with(DailyWB, cbind(AET)), order.by = as.Date(DailyWB$date)), function(x) {colSums(x, na.rm = TRUE)})
-index(hist_et_monthly) <- as.Date(format(index(hist_et_monthly), "%Y-%m-01"))
-hist_et_monthly <- merge(hist_et_monthly, MonthlyET); hist_et_monthly <- hist_et_monthly[complete.cases(hist_et_monthly),]; colnames(hist_et_monthly) <- c("Mod", "Meas")
-hist_et_ann <- apply.yearly(hist_et_monthly, function(x) {colSums(x, na.rm = TRUE)})
+hist_aet_daily <- merge(xts(with(DailyWB, cbind(AET)), order.by = as.Date(DailyWB$date)), DailyET); hist_aet_daily <- hist_aet_daily[complete.cases(hist_aet_daily),]
+colnames(hist_aet_daily) <- c("Mod", "Meas")
+hist_aet_monthly <- apply.monthly(xts(with(DailyWB, cbind(AET)), order.by = as.Date(DailyWB$date)), function(x) {colSums(x, na.rm = TRUE)})
+index(hist_aet_monthly) <- as.Date(format(index(hist_aet_monthly), "%Y-%m-01"))
+hist_aet_monthly <- merge(hist_aet_monthly, MonthlyET); hist_aet_monthly <- hist_aet_monthly[complete.cases(hist_aet_monthly),]; colnames(hist_aet_monthly) <- c("Mod", "Meas")
+hist_aet_ann <- apply.yearly(hist_aet_monthly, function(x) {colSums(x, na.rm = TRUE)})
 
 
 #######################################################################
@@ -276,22 +190,22 @@ hist_et_ann <- apply.yearly(hist_et_monthly, function(x) {colSums(x, na.rm = TRU
 # scatterplot of Historical Measured vs Modeled Streamflow for daily, monthly, annual aggregation
 # there are two trend lines in the scatter plot because the intercept is set to 0 in one and allowed to vary in the other
 if(make_plots){
-  jpeg(file=paste0(outLocationPath, "/", "Historical_Measured_Modeled_Scatter.jpg"), width=1000, height=400); par(mfrow=c(1,3))
+  jpeg(file=paste0(outLocationPath, "/", "Historical_Measured_Modeled_AET_Scatter.jpg"), width=1000, height=400); par(mfrow=c(1,3))
   
   # daily
-  meas <- coredata(hist_et_daily$Meas); mod <- coredata(hist_et_daily$Mod)
+  meas <- coredata(hist_aet_daily$Meas); mod <- coredata(hist_aet_daily$Mod)
   plot(mod, meas, main =paste("Daily Average AET\nNSE:",round(NSE(mod, meas),digits=2)), xlab = "Modeled AET (mm)", ylab = "Measured AET (mm)")
   abline(lm(meas ~ 0 + mod), col= "red")
   abline(lm(meas ~ mod), col= "red")
   
   # monthly
-  mod <- coredata(hist_et_monthly$Mod); meas <- coredata(hist_et_monthly$Meas)
+  mod <- coredata(hist_aet_monthly$Mod); meas <- coredata(hist_aet_monthly$Meas)
   plot(mod, meas, main =paste("Monthly Total AET\nNSE:", round(NSE(mod, meas),digits=2)), xlab = "Modeled AET (mm)", ylab = "Measured AET (mm)")
   abline(lm(meas ~ 0 + mod), col= "red")
   abline(lm(meas ~ mod), col= "red")
   
   # annual
-  mod <- coredata(hist_et_ann$Mod); meas <- coredata(hist_et_ann$Meas)
+  mod <- coredata(hist_aet_ann$Mod); meas <- coredata(hist_aet_ann$Meas)
   plot(mod,meas, main =paste("Annual Total AET\nNSE:", round(NSE(mod, meas),digits=2)), xlab = "Modeled AET (mm)", ylab = "Measured AET (mm)")
   abline(lm(meas ~ 0 + mod), col= "red")
   abline(lm(meas ~ mod), col= "red")
@@ -300,21 +214,85 @@ if(make_plots){
 
 # time series plot of historical Measured vs Modeled AET for daily, monthly, annual aggregation
 if(make_plots){
-  jpeg(file=paste0(outLocationPath, "/", "Historical_Measured_Modeled_TimeSeries.jpg"), width=1000, height=400); par(mfrow=c(1,3))
+  jpeg(file=paste0(outLocationPath, "/", "Historical_Measured_Modeled_AET_TimeSeries.jpg"), width=1000, height=400); par(mfrow=c(1,3))
   
   # daily
-  plot(hist_et_daily[,c('Mod','Meas')], type = "l", lwd = 2, xlab = "Date", ylab = "Daily AET (mm)", main = "Daily", col=c('red','black'))
+  plot(hist_aet_daily[,c('Mod','Meas')], type = "l", lwd = 2, xlab = "Date", ylab = "Daily AET (mm)", main = "Daily", col=c('red','black'))
   print(xts::addLegend("topleft", legend.names = c("Modeled", "Measured"), lty=1, col= c("red", "black")))
   
   # monthly
-  plot(hist_et_monthly[,c("Mod", "Meas")], type = "l", lwd = 2, xlab = "Date", ylab = "Monthly Sum AET (mm)", main = "Monthly", col=c('red','black'))
+  plot(hist_aet_monthly[,c("Mod", "Meas")], type = "l", lwd = 2, xlab = "Date", ylab = "Monthly Sum AET (mm)", main = "Monthly", col=c('red','black'))
   print(xts::addLegend("topleft", legend.names = c("Modeled", "Measured"), lty=1, col= c("red", "black")))
   
   # annual
-  plot(hist_et_ann[,c('Mod','Meas')], type = "l", lwd = 2, xlab = "Date", ylab = "Annual Sum AET (mm)", main = "Annual", col=c('red','black'))
+  plot(hist_aet_ann[,c('Mod','Meas')], type = "l", lwd = 2, xlab = "Date", ylab = "Annual Sum AET (mm)", main = "Annual", col=c('red','black'))
   print(xts::addLegend("topleft", legend.names = c("Modeled", "Measured"), lty=1, col= c("red", "black")))
   dev.off()
 }
+
+#######################################################################
+### HISTORICAL PET #####
+# ETo from OpenET is for a grass reference crop, so isn't accurate in areas 
+# with more complex vegetation cover. These results should not be considered
+# unless the model calibration has been PET to ETo.
+
+# Daily, monthly, annual aggregation with measured and modeled ET
+hist_pet_daily <- merge(xts(with(DailyWB, cbind(PET)), order.by = as.Date(DailyWB$date)), DailyETo); hist_pet_daily <- hist_pet_daily[complete.cases(hist_pet_daily),]
+colnames(hist_pet_daily) <- c("Mod", "Meas")
+hist_pet_monthly <- apply.monthly(xts(with(DailyWB, cbind(PET)), order.by = as.Date(DailyWB$date)), function(x) {colSums(x, na.rm = TRUE)})
+index(hist_pet_monthly) <- as.Date(format(index(hist_pet_monthly), "%Y-%m-01"))
+hist_pet_monthly <- merge(hist_pet_monthly, MonthlyETo); hist_pet_monthly <- hist_pet_monthly[complete.cases(hist_pet_monthly),]; colnames(hist_pet_monthly) <- c("Mod", "Meas")
+hist_pet_ann <- apply.yearly(hist_pet_monthly, function(x) {colSums(x, na.rm = TRUE)})
+
+
+#######################################################################
+### Create summary plots ###
+
+# scatterplot of Historical Measured vs Modeled Streamflow for daily, monthly, annual aggregation
+# there are two trend lines in the scatter plot because the intercept is set to 0 in one and allowed to vary in the other
+if(make_plots){
+  jpeg(file=paste0(outLocationPath, "/", "Historical_Measured_Modeled_PET_Scatter.jpg"), width=1000, height=400); par(mfrow=c(1,3))
+  
+  # daily
+  meas <- coredata(hist_pet_daily$Meas); mod <- coredata(hist_pet_daily$Mod)
+  plot(mod, meas, main =paste("Daily Average PET\nNSE:",round(NSE(mod, meas),digits=2)), xlab = "Modeled PET (mm)", ylab = "Measured PET (mm)")
+  abline(lm(meas ~ 0 + mod), col= "red")
+  abline(lm(meas ~ mod), col= "red")
+  
+  # monthly
+  mod <- coredata(hist_pet_monthly$Mod); meas <- coredata(hist_pet_monthly$Meas)
+  plot(mod, meas, main =paste("Monthly Total PET\nNSE:", round(NSE(mod, meas),digits=2)), xlab = "Modeled PET (mm)", ylab = "Measured PET (mm)")
+  abline(lm(meas ~ 0 + mod), col= "red")
+  abline(lm(meas ~ mod), col= "red")
+  
+  # annual
+  mod <- coredata(hist_pet_ann$Mod); meas <- coredata(hist_pet_ann$Meas)
+  plot(mod,meas, main =paste("Annual Total PET\nNSE:", round(NSE(mod, meas),digits=2)), xlab = "Modeled PET (mm)", ylab = "Measured PET (mm)")
+  abline(lm(meas ~ 0 + mod), col= "red")
+  abline(lm(meas ~ mod), col= "red")
+  dev.off()
+}
+
+# time series plot of historical Measured vs Modeled PET for daily, monthly, annual aggregation
+if(make_plots){
+  jpeg(file=paste0(outLocationPath, "/", "Historical_Measured_Modeled_PET_TimeSeries.jpg"), width=1000, height=400); par(mfrow=c(1,3))
+  
+  # daily
+  plot(hist_pet_daily[,c('Mod','Meas')], type = "l", lwd = 2, xlab = "Date", ylab = "Daily PET (mm)", main = "Daily", col=c('red','black'))
+  print(xts::addLegend("topleft", legend.names = c("Modeled", "Measured"), lty=1, col= c("red", "black")))
+  
+  # monthly
+  plot(hist_pet_monthly[,c("Mod", "Meas")], type = "l", lwd = 2, xlab = "Date", ylab = "Monthly Sum PET (mm)", main = "Monthly", col=c('red','black'))
+  print(xts::addLegend("topleft", legend.names = c("Modeled", "Measured"), lty=1, col= c("red", "black")))
+  
+  # annual
+  plot(hist_pet_ann[,c('Mod','Meas')], type = "l", lwd = 2, xlab = "Date", ylab = "Annual Sum PET (mm)", main = "Annual", col=c('red','black'))
+  print(xts::addLegend("topleft", legend.names = c("Modeled", "Measured"), lty=1, col= c("red", "black")))
+  dev.off()
+}
+
+
+
 
 
 

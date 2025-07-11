@@ -180,6 +180,48 @@ jpeg(file=paste0(outLocationPathFuture, "/", "Annual_AET_Trends.jpg"), width=300
 grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
 dev.off()
 
+# Annual PET
+plot_list <- list()
+for (i in 1:length(model_names)){
+  proj = model_names[i]
+  scenario <- scenario_names[i]
+  
+  analysis_df <- annual_df %>% filter(projection=='Historical' | projection==proj)
+  mod_mk <- MannKendall(analysis_df$PET)
+  mod_sens <- sens.slope(analysis_df$PET[!is.na(analysis_df$PET)])
+  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
+  plot_mod <- ggplot(analysis_df, aes(x = yr, y = PET, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+    labs(x = "Water Year", y = "Annual Streamflow (mm)", title = paste(scenario, "Annual Modeled Streamflow"), color='') +
+    nps_theme() + theme(legend.position = 'bottom') + scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) +
+    annotate("text", x = max(analysis_df$yr), y = max(analysis_df$PET), label = label, color = "black", hjust = 1, vjust = 1) 
+  print(plot_mod)
+  plot_list[[i]] <- plot_mod
+}
+jpeg(file=paste0(outLocationPathFuture, "/", "Annual_PET_Trends.jpg"), width=300*num_models, height=200*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+dev.off()
 
-
-
+# Annual deficit
+plot_list <- list()
+for (i in 1:length(model_names)){
+  proj = model_names[i]
+  scenario <- scenario_names[i]
+  
+  analysis_df <- annual_df %>% filter(projection=='Historical' | projection==proj)
+  mod_mk <- MannKendall(analysis_df$deficit)
+  mod_sens <- sens.slope(analysis_df$deficit[!is.na(analysis_df$deficit)])
+  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
+  plot_mod <- ggplot(analysis_df, aes(x = yr, y = deficit, color=factor(projection))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
+    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+    labs(x = "Water Year", y = "Annual Streamflow (mm)", title = paste(scenario, "Annual Modeled Streamflow"), color='') +
+    nps_theme() + theme(legend.position = 'bottom') + scale_color_manual(values = c('Historical'='black', setNames(color_names, model_names), "Trend"="black")) +
+    annotate("text", x = max(analysis_df$yr), y = max(analysis_df$deficit), label = label, color = "black", hjust = 1, vjust = 1) 
+  print(plot_mod)
+  plot_list[[i]] <- plot_mod
+}
+jpeg(file=paste0(outLocationPathFuture, "/", "Annual_Deficit_Trends.jpg"), width=300*num_models, height=200*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+dev.off()

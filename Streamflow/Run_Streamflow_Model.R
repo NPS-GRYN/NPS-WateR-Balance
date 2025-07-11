@@ -33,7 +33,7 @@ optimization = TRUE
 delayStart = FALSE 
 NonZeroDrainInitCoeff = FALSE
 incompleteMonths = FALSE 
-GridMET = TRUE
+GridMET = FALSE
 fillLeapDays = TRUE 
 historical_analysis = TRUE
 future_analysis = TRUE
@@ -44,13 +44,20 @@ provide_coords = FALSE
 point_location = FALSE
 flow_components = 3
 percent_skill_cutoff = 0.1 
-FolderName = "optim" 
+FolderName = "optim_daymet" 
 #filename_future_wb = "\\Users\\mcburns\\OneDrive - DOI\\water-balance\\Data\\LittleRiver\\littleriver_water_balance_future.csv"
 
 ### Define watershed ###
-SiteID = "San Miguel"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
-GageSiteID <- '09172500'                  #define stream gage location (RWC: "11460151", LR: 03497300, C: 03460000)
-if(provide_coords) lat = 37.9; lon = -122.59 
+SiteID = "Wet Beaver Creek"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
+GageSiteID <- '09505200'                  #define stream gage location (RWC: "11460151", LR: 03497300, C: 03460000)
+
+### Provide geographic data or pull shapefile from StreamStats database ###
+if(provide_coords) {
+  lat = 37.9; lon = -122.59; aoi <- st_read("")  # add path to shapefile
+} else{
+  coords <- get_coords(SiteID_FileName, GageSiteID); lat <- coords$lat; lon <- coords$lon; elev <- coords$elev; aoi <- coords$geometry
+}
+region <- get_region(lat,lon)
 
 ### Define time period for historical analysis ###
 # GridMET begins in 1970, Daymet begins in 1980 
@@ -95,12 +102,17 @@ if(file.exists(paste0(outLocationPath, "/optim_results.rds"))){
   dro = 0; mondro = 0; aspect = 180; slope= 0; shade.coeff= 1; SWC.Max = 200
 }
 
+# Get j_temp
+if(!userSetJTemp){
+  j.raster = raster(here('Data', "merged_jennings.tif"))
+  jtemp = get_jtemp(lat = lat, lon= lon, j.raster = j.raster)}
+
 # Non-optimized WB variables
 Soil.Init = SWC.Max; Snowpack.Init = 0; T.Base = 0 
 
 # Water balance optimization limits
-WB_lower = c(gw_add=0, vfm = 0.25, jrange = 1, hock = 0.25, hockros = 0.25, dro= 0, mondro = 0, aspect= 0, slope =  0, shade.coeff = 0.1, SWC.Max = 10)
-WB_upper = c(gw_add = 1, vfm = 1, jrange = 5, hock = 8, hockros = 8, dro = 1, mondro = 1, aspect = 360, slope = 90, shade.coeff = 1, SWC.Max = 400)
+WB_lower = c(gw_add=0, vfm = 0.25, jrange = 1, hock = 0.25, hockros = 0.25, dro= 0, mondro = 0, aspect= 0, slope =  0, shade.coeff = 0.1, SWC.Max = 10, jtemp = jtemp-0.5)
+WB_upper = c(gw_add = 1, vfm = 1, jrange = 5, hock = 8, hockros = 8, dro = 1, mondro = 1, aspect = 360, slope = 90, shade.coeff = 1, SWC.Max = 400, jtemp = jtemp+0.5)
 
 
 
@@ -120,24 +132,9 @@ p_slope = 1; p_bias = 0
 #######################################################################
 ### Get variables ###
 
-# Pull watershed shapefile from StreamStats database
-if(!provide_coords){
-  coords <- get_coords(SiteID_FileName, GageSiteID); lat <- coords$lat; lon <- coords$lon; elev <- coords$elev; aoi <- coords$geometry
-}
-region <- get_region(lat,lon)
-
 # Define variables that do not need to be defined outside of the function
 # is this supposed to be 11 or 1???
 if(delayStart){ cutoffYear = startY+11 }else{cutoffYear = startY} 
-
-# Get j_temp
-if(!userSetJTemp){
-  j.raster = raster(here('Data', "merged_jennings.tif"))
-  jtemp = get_jtemp(lat = lat, lon= lon, j.raster = j.raster)}
-
-#define lower and upper boundaries for jtemp
-WB_lower = c(WB_lower, jtemp = jtemp-0.5) 
-WB_upper = c(WB_upper, jtemp= jtemp+0.5)
 
 # create start and end date objects of data collection. Daymet will start one year after the year listed here
 startDate <- ymd(paste(startY, startM, startD)); endDate <-  ymd(paste(endY, endM, endD))
@@ -190,13 +187,13 @@ if(NonZeroDrainInitCoeff){
 
 ### Call optimization routine to get optimal variables ###
 if(optimization){
-  source('Streamflow//Optimization.R')
+  source('Streamflow//Streamflow_Optimization.R')
 }
 
 
 ### Run model ###
 DailyWB<- WB(DailyClimData, gw_add, vfm, jrange,hock, hockros, dro, mondro, aspect, slope,
-             shade.coeff, jtemp,SWC.Max, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon)
+             shade.coeff, jtemp,SWC.Max, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon, NULL)
 DailyDrain <- Drain(DailyWB, q0, s0, v0, qa, qb, sa, sb, va, vb)
 MeasMod<- MeasModWB(DailyDrain, meas_flow_mon, cutoffYear)
 
@@ -207,17 +204,17 @@ MeasMod<- MeasModWB(DailyDrain, meas_flow_mon, cutoffYear)
 ### ANALYSIS ###
 
 ### MODEL PERFORMANCE ON HISTORICAL FLOW ###
-source('Streamflow//Model_Accuracy.R')
+source('Streamflow//Streamflow_Model_Accuracy.R')
 
 
 ### HISTORICAL STREAMFLOW ANALYSIS ###
 if(historical_analysis){
-  source('Streamflow//Historical_Analysis.R')
+  source('Streamflow//Streamflow_Historical_Analysis.R')
 }
 
 
 ### FUTURE STREAMFLOW PROJECTIONS ###
 if(future_analysis){
-  source("Streamflow//Future_Analysis.R")
+  source("Streamflow//Streamflow_Future_Analysis.R")
 }
 

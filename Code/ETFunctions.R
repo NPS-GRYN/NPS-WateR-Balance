@@ -206,6 +206,7 @@ ET_PenmanMonteith_daily = function(date, tmax, tmin, srad, vpd, vs, elev, lat){
 }
 
 # Oudin Daily PET: Calculates PET (mm) based on temperature, latitude, and solar radiation 
+# Updates: removed heatload and terrain correction from within this function
 # Args:
 #   doy: Day-of-year (Julian date)
 #   lat: Latitude of the site (degrees).
@@ -222,10 +223,10 @@ get_OudinPET = function(doy, lat, snowpack, tmean, slope, aspect, shade.coeff=NU
   lat.rad = (pi/180)*lat
   sunset.ang = acos(-tan(lat.rad)*tan(declin))
   R.a = ((24*60)/pi)*0.082*d.r*((sunset.ang*sin(lat.rad)*sin(declin)) + (cos(lat.rad)*cos(declin)*sin(sunset.ang)))
-  Oudin = ifelse(snowpack>2,0,ifelse(tmean>-5,(R.a*(tmean+5)*0.408)/100,0))
-  Folded_aspect = abs(180-abs((aspect)-225))
-  Heatload = (0.339+0.808*cos(lat*(pi/180))*cos(slope*(pi/180)))-(0.196*sin(lat.rad)*sin(slope*(pi/180)))-(0.482*cos(Folded_aspect*(pi/180))*sin(slope*(pi/180)))
-  sc = ifelse(!is.null(shade.coeff), shade.coeff, 1)
-  OudinPET = Oudin * Heatload * sc
-  return(OudinPET)
+  Oudin = ifelse(snowpack>2, 0, ifelse(tmean>-5, (R.a*(tmean+5)*0.408)/100, 0))
+  #Folded_aspect = abs(180-abs((aspect)-225))
+  #Heatload = (0.339+0.808*cos(lat*(pi/180))*cos(slope*(pi/180)))-(0.196*sin(lat.rad)*sin(slope*(pi/180)))-(0.482*cos(Folded_aspect*(pi/180))*sin(slope*(pi/180)))
+  #sc = ifelse(!is.null(shade.coeff), shade.coeff, 1)
+  #OudinPET = Oudin * Heatload * sc
+  return(Oudin)
 }
