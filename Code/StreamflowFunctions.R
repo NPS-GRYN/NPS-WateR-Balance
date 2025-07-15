@@ -55,7 +55,7 @@ calc_vb = function(qa, qb, sa, sb, va){
 # Returns:
 #   DailyWB dataframe with @@
 WB <- function(DailyWB, gw_add, vfm , jrange ,hock ,hockros,dro,mondro , aspect, 
-             slope, shade.coeff, jtemp ,SWC.Max, et_slope, et_bias, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon, optimization_var){
+             slope, shade.coeff, jtemp ,SWC.Max, k_c, et_slope, et_bias, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon, optimization_var){
   #add month and day of year columns, GridMet comes with a date column, but the functions below need month and day of year
   DailyWB$month<- as.numeric(format(as.Date(DailyWB$date, format="%Y-%m-%d"),"%m"))
   DailyWB$yday<- yday(DailyWB$date)
@@ -68,19 +68,22 @@ WB <- function(DailyWB, gw_add, vfm , jrange ,hock ,hockros,dro,mondro , aspect,
   DailyWB$MELT = get_melt(rain = DailyWB$RAIN,hockros = hockros, hock = hock, tmean = DailyWB$tmean_C, jtemp = jtemp, snow = DailyWB$SNOW, sp.0 = Snowpack.Init, jrange = jrange)
   DailyWB$PACK = get_snowpack(snow = DailyWB$SNOW, melt = DailyWB$MELT, sp.0 = Snowpack.Init)
   DailyWB$W = get_w(DailyWB$MELT, DailyWB$RAIN)
-  # calculate PET and multiply by the same scaling factor as AET to ensure ratio is correct
+  # calculate PET and multiply by crop coefficient
   DailyWB$PET = switch(PETMethod, 
                     Oudin=  {get_OudinPET(doy = DailyWB$yday, lat = lat,snowpack =  DailyWB$PACK, tmean = DailyWB$tmean_C,slope =  slope, aspect = aspect, shade.coeff = shade.coeff)},
                     Penman = {ET_PenmanMonteith_daily(DailyWB$date, DailyWB$tmmx, DailyWB$tmmn, DailyWB$srad, DailyWB$vpd, DailyWB$vs, elev, lat)},
                     Hamon = {ET_Hamon_daily(DailyWB$tmmx, DailyWB$tmmn, DailyWB$date, lat)})
   DailyWB$PET = modify_PET(pet=DailyWB$PET, slope=slope, aspect=aspect, lat=lat, freeze=DailyWB$F, shade.coeff=shade.coeff)
-  DailyWB$PET = get_adj_et(DailyWB$PET, et_bias, et_slope)
+  DailyWB$PET = DailyWB$PET * k_c
   
   DailyWB$W_PET = get_w_pet(w = DailyWB$W, pet = DailyWB$PET)
   DailyWB$SOIL = get_soil(w = DailyWB$W, swc.0 = Soil.Init, pet = DailyWB$PET, swc.max = SWC.Max,w_pet = DailyWB$W_PET)
   DailyWB$DELTA_SOIL = get_d_soil(DailyWB$SOIL, swc.0 = Soil.Init)
+  
+  # bias correct AET
   DailyWB$AET = get_AET(w = DailyWB$W, pet = DailyWB$PET, swc = DailyWB$SOIL, swc.0 = Soil.Init)
-  #if(optimization_var=='AET') DailyWB$AET <- get_adj_et(DailyWB$AET, et_bias, et_slope)
+  if(optimization_var == 'AET') DailyWB$AET <- get_adj_et(DailyWB$AET, DailyWB$PET, et_bias, et_slope)
+  
   DailyWB$RUNOFF = get_runoff(w = DailyWB$W, d_soil = DailyWB$DELTA_SOIL, AET = DailyWB$AET, RainDRO = DailyWB$RAINDRO)  # this is W - ET - DELTA_SOIL
   DailyWB$D = get_deficit(pet = DailyWB$PET, AET = DailyWB$AET)
   DailyWB$GDD = get_GDD(tmean = DailyWB$tmean_C, tbase = T.Base)
@@ -156,7 +159,7 @@ get_Init_Drain_Coef = function(DailyClimData, gw_add, vfm , jtemp , jrange ,hock
                                q0, s0, v0, qa, qb, sa, sb, va, vb, lat, lon, cutoffYear){
 
   DailyWB<- WB(DailyClimData, gw_add, vfm, jtemp, jrange, hock, hockros, dro, mondro, aspect, slope, 
-               shade.coeff, SWC.Max, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon, NULL)
+               shade.coeff, SWC.Max, 1, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon, "")
   DailyDrain <- Drain(DailyWB, q0, s0, v0, qa, qb, sa, sb, va, vb)
   #add a YrMon Column to DailyDrain
   DailyDrain$YrMon<- format(as.Date(DailyDrain$date, format="%Y-%m-%d"),"%Y-%m")
@@ -210,7 +213,7 @@ WB_Optim = function(parms,
   
   # run WB
   DailyWB <- WB(DailyClimData, gw_add, vfm , jrange, hock, hockros, dro, mondro, aspect, 
-               slope, shade.coeff, jtemp, SWC.Max, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon, NULL)
+               slope, shade.coeff, jtemp, SWC.Max, 1, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon, "")
   
   # run drain
   DailyDrain <- Drain(DailyWB, q0, s0, v0, qa, qb, sa, sb, va, vb)
@@ -242,11 +245,11 @@ WB_Optim = function(parms,
 WB_Optim_ET = function(parms, Soil.Init, Snowpack.Init, T.Base, PETMethod, DailyClimData, lat, lon, meas_et, interval, optimization_var){
   gw_add=parms[["gw_add"]]; vfm=parms[["vfm"]]; jrange=parms[["jrange"]];hock=parms[["hock"]];hockros = parms[["hockros"]]
   dro=parms[["dro"]]; mondro=parms[["mondro"]];aspect=parms[["aspect"]]; slope=parms[["slope"]]; shade.coeff=parms[["shade.coeff"]]; 
-  SWC.Max=parms[["SWC.Max"]]; jtemp=parms[["jtemp"]]; et_slope = parms[["et_slope"]]; et_bias  = 1 #parms[["et_bias"]]
+  SWC.Max=parms[["SWC.Max"]]; jtemp=parms[["jtemp"]]; k_c = parms[['k_c']]; et_slope = parms[["et_slope"]]; et_bias  = parms[["et_bias"]]
   
   # run WB
   DailyWB <- WB(DailyClimData, gw_add, vfm , jrange, hock, hockros, dro, mondro, aspect, 
-                slope, shade.coeff, jtemp, SWC.Max, et_slope, et_bias, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon, optimization_var)
+                slope, shade.coeff, jtemp, SWC.Max, k_c, et_slope, et_bias, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon, optimization_var)
   
   # Aggregate WB ET monthly 
   if(interval=='monthly'){
@@ -266,10 +269,15 @@ WB_Optim_ET = function(parms, Soil.Init, Snowpack.Init, T.Base, PETMethod, Daily
   x <- MeasMod$Mod; y<- MeasMod$Meas
   nse = NSE(x, y)
   Coeffs = data.frame(gw_add=gw_add, vfm=vfm, jrange=jrange, hock=hock, hockros=hockros, dro=dro, mondro=mondro, 
-                      aspect=aspect, slope=slope, shade.coeff=shade.coeff, SWC.Max=SWC.Max, jtemp=jtemp, et_slope=et_slope, et_bias=et_bias, nse=nse, interval=interval)
+                      aspect=aspect, slope=slope, shade.coeff=shade.coeff, SWC.Max=SWC.Max, jtemp=jtemp, k_c=k_c, et_slope=et_slope, et_bias=et_bias, nse=nse, interval=interval)
   WBcoeffs <<- rbind(WBcoeffs, Coeffs) # (<<-) is a global assignment operator
   print(str_c("nse ", interval, " ", round(nse, 4)))
-  return(nse)
+
+  # give penalty depending on AET=PET
+  penalty = mean((DailyWB$AET / DailyWB$PET) ^ 4)  #mean(DailyWB$AET == DailyWB$PET); 
+  penalty_weight = 1.25
+  
+  return(nse - penalty*penalty_weight)
 }
 
 

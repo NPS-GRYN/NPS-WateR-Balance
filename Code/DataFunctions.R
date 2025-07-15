@@ -27,11 +27,6 @@ api_key = 'ZZjI9EAHEFsVhFf8WVgBD2J6ks14IbJZJgHYR1iBPO82EcYO2XxeDJAcwAN9'
 if(!dir.exists(here('Data'))) {dir.create(here('Data'))}
 if(!dir.exists(here('Output'))) {dir.create(here('Output'))}
 
-# list of GCMs
-gcm_list <- c('BNU-ESM', 'CCSM4', 'CNRM-CM5', 'CSIRO-Mk3-6-0', 'CanESM2','GFDL-ESM2G', 'HadGEM2-CC365', 
-              'IPSL-CM5A-LR', 'MIROC5', 'MIROC-ESM-CHEM','MRI-CGCM3', 'NorESM1-M', 'inmcm4')
-
-
 # Get latitude and longitude coordinates of watershed centroid using StreamStats database
 # Args:
 #   SiteID_FileName:
@@ -156,6 +151,10 @@ get_gage_data <- function(GageSiteID, incompleteMonths, fillLeapDays, dataPath){
 #   Dataframe with meteorological data at daily time scale
 get_gridmet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath,
                              tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope){
+  # Identify dates
+  if(startY < 1979) startY <- 1980; if(endY > 2024) endY <- 2024
+  startDate <- ymd(paste(startY, startM, startD)); endDate <-  ymd(paste(endY, endM, endD))
+  
   # Scrape data and save
   if(!file.exists(file.path(dataPath, paste0(paste("GridMET", SiteID_FileName, startY, endY, 'point', sep = "_" ), '.csv')))){
     # Scrape data
@@ -197,6 +196,10 @@ get_gridmet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath,
 #   Dataframe with meteorological data at daily time scale
 get_gridmet_area <- function(SiteID_FileName, startY, endY, aoi, dataPath,
                               tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope){
+  # Identify dates
+  if(startY < 1979) startY <- 1980; if(endY > 2024) endY <- 2024
+  startDate <- ymd(paste(startY, startM, startD)); endDate <-  ymd(paste(endY, endM, endD))
+  
   # Scrape data and save
   if(!file.exists(file.path(dataPath, paste0(paste("GridMET", SiteID_FileName, startY, endY, 'area', sep = "_" ), '.csv')))){
     # Scrape data
@@ -251,23 +254,26 @@ get_gridmet_area <- function(SiteID_FileName, startY, endY, aoi, dataPath,
 # Returns:
 #   Dataframe with Daymet meteorological data from point location at daily time scale
 get_daymet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath){
+  # Identify dates
+  if(startY < 1980) startY <- 1980; if(endY > 2024) endY <- 2024
+  startDate <- ymd(paste(startY, startM, startD)); endDate <-  ymd(paste(endY, endM, endD))
+  
   # Scrape data and save
-  if(!file.exists(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY+1,endY, "point", sep = "_"), ".csv")))){
+  if(!file.exists(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY,endY, "point", sep = "_"), ".csv")))){
     # Scrape data
-    if(endDate < 1980) endDate <- 1980
     point <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
     DailyClimData <- getDaymet(point, startDate = startDate, endDate = endDate,verbose = TRUE)
     
     # Save
     write.csv(DailyClimData, file.path(dataPath, paste0(paste("Daymet",SiteID_FileName,startY, endY, "point", sep = "_" ), ".csv")), row.names = FALSE) 
   } else{
-    DailyClimData<- read.csv(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY+1,endY, "point", sep = "_"), ".csv")), skip = 6, header = TRUE, sep = ",")
+    DailyClimData<- read.csv(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY,endY, "point", sep = "_"), ".csv")), skip = 6, header = TRUE, sep = ",")
   }
   
   # Fill leap days according to user input
   # check this code - seems really unwieldy/possibly could be condensed
   HasLeapDays <- data.frame(date = as.Date(seq(0, (nrow(DailyClimData)-1), 1),
-                                           origin = ymd(paste(startY+1, startM, startD))))
+                                           origin = ymd(startDate)))
   NoLeapDays<- HasLeapDays[!(format(HasLeapDays$date,"%m") == "02" & format(HasLeapDays$date, "%d") == "29"), , drop = FALSE]
   DifRows = nrow(HasLeapDays)-nrow(NoLeapDays)
   LastDate = NoLeapDays[nrow(NoLeapDays),]
@@ -309,7 +315,11 @@ get_daymet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath){
 # Returns:
 #   Dataframe with Daymet meteorological data from watershed average at daily time scale
 get_daymet_area <-  function(SiteID_FileName, startY, endY, aoi, dataPath){
-  if(!file.exists(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY+1,endY, "area", sep = "_"), ".csv")))){
+  # Identify dates
+  if(startY < 1980) startY <- 1980; if(endY > 2024) endY <- 2024
+  startDate <- ymd(paste(startY, startM, startD)); endDate <-  ymd(paste(endY, endM, endD))
+  
+  if(!file.exists(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY,endY, "area", sep = "_"), ".csv")))){
     # Scrape data
     if(endDate < 1980) endDate <- 1980
     clim_data <- getDaymet(aoi, startDate = startDate, endDate = endDate,verbose = TRUE)
@@ -333,7 +343,7 @@ get_daymet_area <-  function(SiteID_FileName, startY, endY, aoi, dataPath){
     # Address leap days
     # check this code - seems really unwieldy/possibly could be condensed
     HasLeapDays <- data.frame(date = as.Date(seq(0, (nrow(DailyClimData)-1), 1),
-                                             origin = ymd(paste(startY+1, startM, startD))))
+                                             origin = ymd(startDate)))
     NoLeapDays<- HasLeapDays[!(format(HasLeapDays$date,"%m") == "02" & format(HasLeapDays$date, "%d") == "29"), , drop = FALSE]
     DifRows = nrow(HasLeapDays)-nrow(NoLeapDays)
     LastDate = NoLeapDays[nrow(NoLeapDays),]
@@ -365,7 +375,7 @@ get_daymet_area <-  function(SiteID_FileName, startY, endY, aoi, dataPath){
     # Save
     write.csv(DailyClimData, file.path(dataPath, paste0(paste("Daymet",SiteID_FileName,startY, endY, "area", sep = "_" ), ".csv")), row.names = FALSE) 
   } else{
-    DailyClimData<- read.csv(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY+1,endY, "area", sep = "_"), ".csv")), skip = 6, header = TRUE, sep = ",")
+    DailyClimData<- read.csv(file.path(dataPath, paste0(paste("Daymet", SiteID_FileName, startY,endY, "area", sep = "_"), ".csv")), skip = 6, header = TRUE, sep = ",")
     DailyClimData$date <- as.Date(DailyClimData$date)
   }
   return(DailyClimData)
@@ -376,7 +386,7 @@ get_daymet_area <-  function(SiteID_FileName, startY, endY, aoi, dataPath){
 # Pull MACA projections for a single point and clean data
 # Args:
 # Returns:
-get_maca_point <- function(lat, lon, SiteID_FileName){
+get_maca_point <- function(lat, lon, SiteID_FileName, gcm_list){
   if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_point.csv', sep='_')))){
     # Pull data
     point <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
@@ -424,7 +434,7 @@ get_maca_point <- function(lat, lon, SiteID_FileName){
 # doesn't work, wrong order
 # Args:
 # Returns:
-get_maca_area <- function(aoi, SiteID_FileName){
+get_maca_area <- function(aoi, SiteID_FileName, gcm_list){
   if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, endY, '2100_area.csv', sep='_')))){
     # Pull data
     future_climate_data <- getMACA(aoi, c('pr','rsds','vpd','vas','uas'), timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'),

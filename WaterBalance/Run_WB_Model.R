@@ -40,7 +40,7 @@ future_analysis = TRUE
 runFutureWB = TRUE
 calcFutureWB = TRUE
 userSetJTemp = FALSE 
-make_plots = TRUE 
+make_plots = FALSE 
 provide_coords = FALSE
 point_location = FALSE
 percent_skill_cutoff = 0.1 
@@ -80,7 +80,7 @@ individual_models = c('BNU-ESM.rcp45')
 # Default water balance variables
 gw_add=0; vfm = 0.7555; jtemp = 1.982841; jrange = 3; hock = 4; hockros = 4; 
 dro = 0; mondro = 0; aspect = 180; slope= 0; shade.coeff= 1; SWC.Max = 200
-et_slope = 1; et_bias = 0
+k_c = 1; et_slope = 1; et_bias = 0
 Soil.Init = SWC.Max; Snowpack.Init = 0; T.Base = 0  
 
 # Get j_temp
@@ -89,8 +89,8 @@ if(!userSetJTemp){
   jtemp = get_jtemp(lat = lat, lon= lon, j.raster = j.raster)}
 
 # Water balance optimization lower and upper limits
-WB_lower = c(gw_add=0, vfm = 0.25, jrange = 1, hock = 0.25, hockros = 0.25, dro= 0, mondro = 0, aspect= 0, slope =  0, shade.coeff = 0.1, SWC.Max = 10,  jtemp = jtemp-0.5, et_slope=-5, et_bias=-5)
-WB_upper = c(gw_add = 1, vfm = 1, jrange = 5, hock = 8, hockros = 8, dro = 1, mondro = 1, aspect = 360, slope = 90, shade.coeff = 1, SWC.Max = 400,  jtemp = jtemp+0.5, et_slope=5, et_bias=5)
+WB_lower = c(gw_add=0, vfm = 0.25, jrange = 1, hock = 0.25, hockros = 0.25, dro= 0, mondro = 0, aspect= 0, slope =  0, shade.coeff = 0.1, SWC.Max = 10,  jtemp = jtemp-0.5, k_c=0, et_slope=-5, et_bias=-5)
+WB_upper = c(gw_add = 1, vfm = 1, jrange = 5, hock = 8, hockros = 8, dro = 1, mondro = 1, aspect = 360, slope = 90, shade.coeff = 1, SWC.Max = 400,  jtemp = jtemp+0.5, k_c=5, et_slope=5, et_bias=5)
 
 
 #######################################################################
@@ -164,7 +164,7 @@ if(optimization) source('WaterBalance//WB_Optimization.R')
 #######################################################################
 ### Run model  ###
 DailyWB <- WB(DailyClimData, gw_add, vfm, jrange,hock, hockros, dro, mondro, aspect, slope,
-               shade.coeff, jtemp,SWC.Max, et_slope, et_bias, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon, optimization_var)
+               shade.coeff, jtemp,SWC.Max, k_c, et_slope, et_bias, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon, optimization_var)
 
 
 

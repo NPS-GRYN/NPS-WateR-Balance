@@ -29,11 +29,11 @@ setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setw
 #######################################################################
 ### Set user-defined variables ###
 PETMethod = "Oudin" 
-optimization = TRUE 
+optimization = FALSE 
 delayStart = FALSE 
 NonZeroDrainInitCoeff = FALSE
 incompleteMonths = FALSE 
-GridMET = FALSE
+GridMET = TRUE
 fillLeapDays = TRUE 
 historical_analysis = TRUE
 future_analysis = TRUE
@@ -44,7 +44,7 @@ provide_coords = FALSE
 point_location = FALSE
 flow_components = 3
 percent_skill_cutoff = 0.1 
-FolderName = "optim_daymet" 
+FolderName = "optim" 
 #filename_future_wb = "\\Users\\mcburns\\OneDrive - DOI\\water-balance\\Data\\LittleRiver\\littleriver_water_balance_future.csv"
 
 ### Define watershed ###
@@ -66,9 +66,10 @@ endY = 2023; endM = 12; endD = 31
 if(delayStart){ cutoffYear = startY+11 }else{cutoffYear = startY} 
 
 
-### Model names ###
-# provide list of model names to generate plots of future streamflow with those models highlighted
-individual_models = c('BNU-ESM.rcp45')
+### Model names for future streamflow ###
+gcm_list <- c('BNU-ESM', 'CCSM4', 'CNRM-CM5', 'CSIRO-Mk3-6-0', 'CanESM2','GFDL-ESM2G', 'HadGEM2-CC365', 
+              'IPSL-CM5A-LR', 'MIROC5', 'MIROC-ESM-CHEM','MRI-CGCM3', 'NorESM1-M', 'inmcm4')
+
 
 
 ### Set path variables ###
@@ -123,22 +124,12 @@ tmmx_slope = 1; tmmx_bias = 0
 tmmn_slope = 1; tmmn_bias = 0
 p_slope = 1; p_bias = 0
 
+if(delayStart){ cutoffYear = startY+11 }else{cutoffYear = startY} 
 
 
 #######################################################################
 #######################################################################
 ### GET DATA ###
-
-#######################################################################
-### Get variables ###
-
-# Define variables that do not need to be defined outside of the function
-# is this supposed to be 11 or 1???
-if(delayStart){ cutoffYear = startY+11 }else{cutoffYear = startY} 
-
-# create start and end date objects of data collection. Daymet will start one year after the year listed here
-startDate <- ymd(paste(startY, startM, startD)); endDate <-  ymd(paste(endY, endM, endD))
-
 
 #######################################################################
 ### Scrape and clean USGS stream gage data ###
@@ -193,7 +184,7 @@ if(optimization){
 
 ### Run model ###
 DailyWB<- WB(DailyClimData, gw_add, vfm, jrange,hock, hockros, dro, mondro, aspect, slope,
-             shade.coeff, jtemp,SWC.Max, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon, NULL)
+             shade.coeff, jtemp,SWC.Max, 1, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon, "")
 DailyDrain <- Drain(DailyWB, q0, s0, v0, qa, qb, sa, sb, va, vb)
 MeasMod<- MeasModWB(DailyDrain, meas_flow_mon, cutoffYear)
 

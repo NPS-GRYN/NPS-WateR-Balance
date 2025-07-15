@@ -91,7 +91,7 @@ get_soil = function(w, swc.0=NULL, pet, w_pet, swc.max){
   swc.i = ifelse(!is.null(swc.0), swc.0,0)
   soil=c()
   for(i in 1:length(pet)){
-    soil[i] = ifelse(w[i]>pet[i], min((w_pet[i]+swc.i),swc.max), swc.i-swc.i*(1-exp(-(pet[i]-w[i])/swc.max)))
+    soil[i] = ifelse(w[i]>pet[i], min((w_pet[i]+swc.i), swc.max), swc.i-swc.i*(1-exp(-(pet[i]-w[i])/swc.max)))
     swc.i=soil[i]
   }
   return(soil)  
@@ -111,7 +111,7 @@ get_d_soil=function(swc, swc.0=NULL){
 }
 
 # Actual Evapotranspiration (AET): Calculates actual evapotranspiration (AET) from available water, PET, and soil water.
-# Update: cap AET so it cannot be above PET
+# Update: cap AET so it cannot be above PET, replacing ifelse(w[i] > pet[i], pet[i], w[i]+swc.i-swc[i])
 # Args:
 #   w:  Time series vector of available water for soil charging (rain + snowmelt)
 #   pet: Time series vector of PET
@@ -123,7 +123,6 @@ get_AET = function(w, pet, swc, swc.0=NULL){
   swc.i = ifelse(!is.null(swc.0), swc.0, 0)
   AET = numeric(length(w))
   for(i in 1:length(AET)){
-    #AET[i] = ifelse(w[i] > pet[i], pet[i], w[i]+swc.i-swc[i])
     AET[i] = min(pet[i], w[i]+swc.i-swc[i])
     swc.i = swc[i]
   }
@@ -316,8 +315,8 @@ get_slope_bias_adj= function(orig, bias, slopeadj){
 #   et_bias: addition component of bias correction
 # Returns:
 #   Time series vector of bias-corrected ET data, multiplied by slope adjustment and with bias added
-get_adj_et = function(et, et_bias, et_slope){
-  adjusted = (et * et_slope) ^ et_bias # + et_bias
+get_adj_et = function(aet, pet, et_bias, et_slope){
+  adjusted = pmin(aet * et_slope + et_bias, pet)    #aet * (1 - exp(-et_slope * aet + et_bias))
   return(adjusted)
 }
 
