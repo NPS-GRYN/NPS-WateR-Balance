@@ -41,8 +41,8 @@ if(!calcFutureWB){
 if(calcFutureWB){
   if(!file.exists(here('Data',SiteID_FileName,paste('WB_calc',SiteID_FileName, endY, "2100.csv", sep='_')))){
     # Get future climate data
-    if(point_location) {future_climate <- get_maca_point(lat, lon, SiteID_FileName)
-    } else future_climate <- get_maca_area(aoi, SiteID_FileName)
+    if(point_location) {future_climate <- get_maca_point(lat, lon, SiteID_FileName, gcm_list)
+    } else future_climate <- get_maca_area(aoi, SiteID_FileName, gcm_list)
     
     # Run water balance code for each future projection
     wb_list <- vector("list", length(unique(future_climate$projection)))

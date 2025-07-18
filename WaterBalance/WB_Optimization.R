@@ -42,7 +42,7 @@ k_c=optValuesM$k_c; et_slope=optValuesM$et_slope; et_bias=optValuesM$et_bias
 
 # store and save results
 results = data.frame(results, optValuesM, elpTimeM = elpTimeM)
-saveRDS(WBcoeffs, file = paste0(outLocationPath, "/WBcoeffs.rds"))
+saveRDS(WBcoeffs, file = paste0(outLocationPath, "/WBcoeffs.rds")); saveRDS(results, file = paste0(outLocationPath, "/optim_results.rds"))
 
 # print time
 print(paste("Time elapsed:", elpTimeM))
