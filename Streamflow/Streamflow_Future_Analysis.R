@@ -6,9 +6,9 @@
 # preliminary visualizations of these future streamflow projections. 
 # 
 # EDITS IN PROGRESS
-# make sure everything runs smoothly
 # figure out what's the appropriate line of reasoning for the future wb models
 # double check that this all works, post-MACA updates
+# add additional box plots?
 # ---------------------------------------------------------------------
 
 
@@ -536,6 +536,136 @@ if(make_plots){
   grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2); dev.off()
 }
 
+
+#######################################################################
+### BOXPLOTS ###
+
+### Change in annual streamflow magnitude ###
+delta_plot <- (model_annual_df %>% filter(rcp!="Historical")) %>% 
+  left_join((model_annual_df %>% filter(rcp=="Historical")) %>% group_by(gcm) %>% summarize(mean_total=mean(total, na.rm=TRUE)), by = "gcm") %>%
+  mutate(delta_annual_mm=total-mean_total)
+
+# All models by RCP
+plot <- ggplot() + geom_boxplot(data=delta_plot, aes(x=projection, y=delta_annual_mm, fill=rcp)) + 
+  labs(title='Change in annual flow magnitude', y='Change in annual flow [mm]', x='Projection', fill='RCP') + 
+  scale_fill_manual(values = c('45' = 'orange', '85' = 'red')) + 
+  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+jpeg(file=paste0(outLocationPathFuture, "/", "Annual_Flow_Change_RCP.jpg"), width=600, height=500)
+print(plot); dev.off()
+
+# All models by climate future
+plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_annual_mm, fill=projection)) + 
+  geom_boxplot(data=(delta_plot %>% filter(!projection %in% model_names)), aes(x=projection, y=delta_annual_mm, fill='Other')) + 
+  labs(title='Change in annual flow magnitude', y='Change in annual flow [mm]', x='Projection', fill='Future') + 
+  scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+jpeg(file=paste0(outLocationPathFuture, "/", "Annual_Flow_Change.jpg"), width=600, height=500)
+print(plot); dev.off()
+
+# Just climate futures
+plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_annual_mm, fill=projection)) + 
+  labs(title='Change in annual flow magnitude', y='Change in annual flow [mm]', x='Projection', fill='Future') + 
+  scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+jpeg(file=paste0(outLocationPathFuture, "/", "Annual_Flow_Change_Futures.jpg"), width=600, height=500)
+print(plot); dev.off()
+
+
+### Change in daily streamflow standard deviation ###
+delta_plot_sd <- (model_df %>% filter(rcp!="Historical")) %>% group_by(projection, yr) %>% summarize(gcm=first(gcm), rcp=first(rcp), Period=first(Period), fut_sd=sd(total, na.rm=TRUE)) %>%
+  left_join((model_df %>% filter(rcp=="Historical")) %>% group_by(gcm) %>% summarize(hist_sd=sd(total, na.rm=TRUE)), by = "gcm") %>% 
+  mutate(delta_daily_sd=fut_sd-hist_sd)
+
+# All models by RCP
+plot <- ggplot() + geom_boxplot(data=delta_plot_sd, aes(x=projection, y=delta_daily_sd, fill=rcp)) + 
+  labs(title='Change in daily flow standard deviation', y='Change in standard deviation [mm]', x='Projection', fill='RCP') + 
+  scale_fill_manual(values = c('45' = 'orange', '85' = 'red')) + 
+  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+jpeg(file=paste0(outLocationPathFuture, "/", "SD_Change_RCP.jpg"), width=600, height=500)
+print(plot); dev.off()
+
+# All models by climate future
+plot <- ggplot() + geom_boxplot(data=(delta_plot_sd %>% filter(projection %in% model_names)), aes(x=projection, y=delta_daily_sd, fill=projection)) + 
+  geom_boxplot(data=(delta_plot_sd %>% filter(!projection %in% model_names)), aes(x=projection, y=delta_daily_sd, fill='Other')) + 
+  labs(title='Change in daily flow standard deviation', y='Change in standard deviation [mm]', x='Projection', fill='Future') + 
+  scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+jpeg(file=paste0(outLocationPathFuture, "/", "SD_Change.jpg"), width=600, height=500)
+print(plot); dev.off()
+
+# Just climate futures
+plot <- ggplot() + geom_boxplot(data=(delta_plot_sd %>% filter(projection %in% model_names)), aes(x=projection, y=delta_daily_sd, fill=projection)) + 
+  labs(title='Change in daily flow standard deviation', y='Change in standard deviation [mm]', x='Projection', fill='Future') + 
+  scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+jpeg(file=paste0(outLocationPathFuture, "/", "SD_Change_Futures.jpg"), width=600, height=500)
+print(plot); dev.off()
+
+
+### Change in high flows (95th percentile) ###
+high_flow_q = 0.95
+high_threshold <- model_df %>% filter(rcp == "Historical") %>% group_by(gcm) %>% summarize(threshold = quantile(total, high_flow_q, na.rm = TRUE))
+delta_plot <- model_df %>% filter(rcp == "Historical") %>% inner_join(high_threshold, by = "gcm") %>% 
+  group_by(gcm, yr) %>% summarize(threshold=first(threshold), hist_days = sum(total > threshold, na.rm = TRUE), .groups = "drop") %>% group_by(gcm) %>% summarize(threshold=first(threshold), hist_days = mean(hist_days)) %>% 
+  right_join(model_df %>% filter(rcp!="Historical"), by='gcm') %>% distinct(projection, yr, gcm, rcp, Period, threshold, total, hist_days) %>%  group_by(projection, yr) %>% summarize(gcm=first(gcm), rcp=first(rcp), Period=first(Period), hist_days=first(hist_days), fut_days = sum(total > threshold, na.rm = TRUE), delta_days=fut_days-hist_days)
+
+# All models by RCP
+plot <- ggplot() + geom_boxplot(data=delta_plot, aes(x=projection, y=delta_days, fill=rcp)) + 
+  labs(title='Change in days above historic 95th percentile', y='Change in days', x='Projection', fill='RCP') + 
+  scale_fill_manual(values = c('45' = 'orange', '85' = 'red')) + 
+  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+jpeg(file=paste0(outLocationPathFuture, "/", "High_Flow_Change_RCP.jpg"), width=600, height=500)
+print(plot); dev.off()
+
+# All models by climate future
+plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_days, fill=projection)) + 
+  geom_boxplot(data=(delta_plot %>% filter(!projection %in% model_names)), aes(x=projection, y=delta_days, fill='Other')) + 
+  labs(title='Change in days above historic 95th percentile', y='Change in days', x='Projection', fill='Future') + 
+  scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+jpeg(file=paste0(outLocationPathFuture, "/", "High_Flow_Change.jpg"), width=600, height=500)
+print(plot); dev.off()
+
+# Just climate futures
+plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_days, fill=projection)) + 
+  labs(title='Change in days above historic 95th percentile', y='Change in days', x='Projection', fill='Future') + 
+  scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+jpeg(file=paste0(outLocationPathFuture, "/", "High_Flow_Change_Futures.jpg"), width=600, height=500)
+print(plot); dev.off()
+
+
+### Change in low flows (5th percentile) ###
+low_flow_q = 0.05
+low_threshold <- model_df %>% filter(rcp == "Historical") %>% group_by(gcm) %>% summarize(threshold = quantile(total, high_flow_q, na.rm = TRUE))
+delta_plot <- model_df %>% filter(rcp == "Historical") %>% inner_join(low_threshold, by = "gcm") %>% 
+  group_by(gcm, yr) %>% summarize(threshold=first(threshold), hist_days = sum(total < threshold, na.rm = TRUE), .groups = "drop") %>% group_by(gcm) %>% summarize(threshold=first(threshold), hist_days = mean(hist_days)) %>% 
+  right_join(model_df %>% filter(rcp!="Historical"), by='gcm') %>% distinct(projection, yr, gcm, rcp, Period, threshold, total, hist_days) %>%  group_by(projection, yr) %>% summarize(gcm=first(gcm), rcp=first(rcp), Period=first(Period), hist_days=first(hist_days), fut_days = sum(total < threshold, na.rm = TRUE), delta_days=fut_days-hist_days)
+
+# All models by RCP
+plot <- ggplot() + geom_boxplot(data=delta_plot, aes(x=projection, y=delta_days, fill=rcp)) + 
+  labs(title='Change in days below historic 5th percentile', y='Change in days', x='Projection', fill='RCP') + 
+  scale_fill_manual(values = c('45' = 'orange', '85' = 'red')) + 
+  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+jpeg(file=paste0(outLocationPathFuture, "/", "High_Flow_Change_RCP.jpg"), width=600, height=500)
+print(plot); dev.off()
+
+# All models by climate future
+plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_days, fill=projection)) + 
+  geom_boxplot(data=(delta_plot %>% filter(!projection %in% model_names)), aes(x=projection, y=delta_days, fill='Other')) + 
+  labs(title='Change in days below historic 5th percentile', y='Change in days', x='Projection', fill='Future') + 
+  scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+jpeg(file=paste0(outLocationPathFuture, "/", "High_Flow_Change.jpg"), width=600, height=500)
+print(plot); dev.off()
+
+# Just climate futures
+plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_days, fill=projection)) + 
+  labs(title='Change in days below historic 5th percentile', y='Change in days', x='Projection', fill='Future') + 
+  scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+jpeg(file=paste0(outLocationPathFuture, "/", "High_Flow_Change_Futures.jpg"), width=600, height=500)
+print(plot); dev.off()
 
 
 #######################################################################

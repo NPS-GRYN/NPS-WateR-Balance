@@ -275,7 +275,7 @@ WB_Optim_ET = function(parms, Soil.Init, Snowpack.Init, T.Base, PETMethod, Daily
 
   # give penalty depending on AET=PET
   penalty = mean(DailyWB$AET == DailyWB$PET)**4  #mean(DailyWB$AET == DailyWB$PET); 
-  penalty_weight = 1
+  penalty_weight = 3
   
   return(nse - penalty*penalty_weight)
 }
