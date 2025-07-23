@@ -7,7 +7,6 @@
 # For many of the functions, units are not prescribed (but must match with the other inputs). When units 
 # are prescribed, the function requires them.
 #
-# EDITS IN PROGRESS
 # ---------------------------------------------------------------------
 
 
@@ -164,7 +163,7 @@ get_GDD = function(tmean, tbase=NULL){
 #   jrange: Range of uncertainty for Jennings temperature (deg C)
 #   precip: Time series vector of precipitation
 #   month: Month of year (numerical)
-# Returns
+# Returns: 
 #   raindro: Time series vector of direct runoff from rain.
 get_dro = function(DailyWB, mondro, dro, tmean, jtemp, jrange, precip, month){
   high = jtemp+jrange
@@ -259,7 +258,7 @@ get_snowpack = function (snow, melt, sp.0 = NULL)
   sp.i = ifelse(!is.null(sp.0), sp.0, 0)
   snowpack <- vector()
   for (i in 1:length(melt)) {
-    snowpack[i] = sp.i + snow[i] - melt[i]
+    snowpack[i] = min(sp.i + snow[i] - melt[i], 0)
     sp.i = snowpack[i]
   }
   return(snowpack)
@@ -316,7 +315,7 @@ get_slope_bias_adj= function(orig, bias, slopeadj){
 # Returns:
 #   Time series vector of bias-corrected ET data, multiplied by slope adjustment and with bias added
 get_adj_et = function(aet, pet, et_bias, et_slope){
-  adjusted = pmin(aet * et_slope + et_bias, pet)    #aet * (1 - exp(-et_slope * aet + et_bias))
+  adjusted = pmin(aet * et_slope + et_bias, pet)
   return(adjusted)
 }
 

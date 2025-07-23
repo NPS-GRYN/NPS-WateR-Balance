@@ -19,13 +19,11 @@ gcm_list <- gcm_list[!gcm_list %in% low_skill_models$GCM]
 
 ### Use Mike Tercek's pre-generated gridded CONUS water balance model for future projections ###
 if(!calcFutureWB){
-  # Access provided file
-  if(file.exists(filename_future_wb)) {
-    future_wb_conus <- get_conus_wb_direct(SiteID_FileName, dataPath, filename_future_wb)
-  } else{
-    # Pull directly from website
-    future_wb_conus <- get_conus_wb(SiteID_FileName, lat, lon, endY, 2099)
-  }
+  # Pull directly from website
+  future_wb_conus <- get_conus_wb(SiteID_FileName, lat, lon, endY, 2099)
+  #if(file.exists(filename_future_wb)) {
+  #  future_wb_conus <- get_conus_wb_direct(SiteID_FileName, dataPath, filename_future_wb)
+  #} 
   
   # If neither version can be accessed, calculate water balance
   if(anyNA(future_wb_conus)){
@@ -69,7 +67,6 @@ if(calcFutureWB){
 
 ### Compare the two future water balance projections, just for fun ###
 # plot AET, deficit, adj runoff for a sample year and a sample model
-# edit if statement
 if(exists("future_wb_conus") & exists("future_wb_calc")){
   model_run = 'HadGEM2-CC365.rcp45'; yr = 2060
   if(make_plots){
@@ -77,7 +74,7 @@ if(exists("future_wb_conus") & exists("future_wb_calc")){
       geom_line(data=future_wb_calc %>% filter(projection==model_run & year(date)==yr), aes(x=date, y=AET), col='red')+
       labs(x='Date',y='AET [mm]', title='Actual Evapotranspiration') +
       theme(legend.position = "none") + nps_theme()
-    plot_d <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(date)==yr), aes(x=date, y=Deficit), col='black')+
+    plot_d <- ggplot() + geom_line(data=future_wb_conus %>% filter(projection==model_run & year(date)==yr), aes(x=date, y=deficit), col='black')+
       geom_line(data=future_wb_calc %>% filter(projection==model_run & year(date)==yr), aes(x=date, y=D), col='red')+
       labs(x='Date',y='Deficit [mm]', title='Deficit') +
       theme(legend.position = "none") + nps_theme()
@@ -105,7 +102,7 @@ if(calcFutureWB){
   colnames(future_wb) <- c('date','projection','deficit','AET','soil_water','runoff','accumswe','PET','adj_runoff')
   if(!dir.exists(file.path(outLocationPath, 'WB_Calc'))) {dir.create(file.path(outLocationPath, 'WB_Calc'))}; outLocationPathFuture = file.path(outLocationPath, 'WB_Calc')
 } else{
-  future_wb <- future_wb_conus 
+  future_wb <- future_wb_conus %>% select(-rain)
   if(!dir.exists(file.path(outLocationPath, 'WB_CONUS'))) {dir.create(file.path(outLocationPath, 'WB_CONUS'))}; outLocationPathFuture = file.path(outLocationPath, 'WB_CONUS')
 }
 
@@ -540,3 +537,177 @@ plot <- ggplot(data=delta_plot) +
   scale_color_manual(values = c("Other" = "black", setNames(color_names, model_names)), labels=c("Other" = "black", setNames(scenario_names, model_names))) + nps_theme()
 print(plot)
 dev.off()
+
+
+#######################################################################
+#######################################################################
+### CLIMATE FUTURE BLOBS ###
+# AET vs D
+if(make_plots){
+  plot_list <- list()
+  for (i in 1:length(model_names)){
+    proj = model_names[i]
+    scenario <- scenario_names[i]
+    
+    analysis_df <- model_annual_df %>% filter(gcm==strsplit(proj, "\\.")[[1]][1] & (rcp==gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]) | grepl('Hist', rcp)))
+    
+    plot_list[[i]] <- ggplot(analysis_df) + geom_point(aes(x = deficit, y = AET, color = Period), size = 4, alpha = 0.6) +
+      geom_encircle(aes(x = deficit, y = AET, color = Period), show.legend = FALSE, size = 2) +
+      labs(title = paste(scenario, "Deficit vs. AET"), x = "Annual Deficit [mm]", y = "Annual AET [mm]") +
+      #scale_color_manual(values = c("Historical"="#A3B86C", "Early"="#EBC944", "Middle"="#1496BB", "Late"='Black')) +
+      theme(axis.title.x = element_text(size = 15)) + nps_theme()
+  }
+  jpeg(file=paste0(outLocationPathFuture, "/", "Annual_AET_D_Trends.jpg"), width=300*num_models, height=200*num_models)
+  grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+  dev.off() 
+}
+
+
+#######################################################################
+#######################################################################
+### SEASONALITY ###
+
+# AET distribution
+plot_list <- list()
+for (i in 1:length(model_names)){
+  proj = model_names[i]
+  scenario <- scenario_names[i]
+  
+  analysis_df <- model_df %>% mutate(date_group = yday(date)) %>% group_by(projection, date_group) %>%
+    dplyr::summarize(gcm=first(gcm), rcp=first(rcp), value = mean(AET, na.rm = TRUE), .groups = 'drop') %>%
+    mutate(date_group = factor(date_group, levels = c(274:366, 1:273))) %>%  arrange(date_group)
+  
+  plot_list[[i]] <- ggplot() + 
+    geom_smooth(data = (analysis_df %>% filter(!grepl(strsplit(proj, "\\.")[[1]][1], gcm) & !(grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))), aes(x = date_group, y = value, group = projection, color = "Other"), alpha = 0.1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp))), aes(x = date_group, y = value, group = projection, color = projection), alpha = 1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl('Hist', rcp))), aes(x = date_group, y = value, group = projection, color = "Historical"), alpha = 1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    labs(title=paste("Smoothed Daily AET"), y=paste('AET [mm]'), x=NULL, color='Model') + nps_theme() + 
+    scale_color_manual(values = c("Other" = "gray", 'Historical'='black',setNames(color_names, model_names)), labels = c("Other" = 'Other Models', setNames(scenario_names, model_names))) + 
+    guides(alpha = "none") + scale_x_discrete(breaks = c(274,305,335,1,32,60,91,121,152,182,213,244),labels = c("Oct", "Nov","Dec","Jan","Feb","Mar","Apr","May","Jun",'Jul','Aug','Sep'))
+}
+jpeg(file=paste0(outLocationPathFuture, "/", "Smoothed_Daily_AET_Trends.jpg"), width=300*num_models, height=150*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2); dev.off()
+
+# PET distribution
+plot_list <- list()
+for (i in 1:length(model_names)){
+  proj = model_names[i]
+  scenario <- scenario_names[i]
+  
+  analysis_df <- model_df %>% mutate(date_group = yday(date)) %>% group_by(projection, date_group) %>%
+    dplyr::summarize(gcm=first(gcm), rcp=first(rcp), value = mean(PET, na.rm = TRUE), .groups = 'drop') %>%
+    mutate(date_group = factor(date_group, levels = c(274:366, 1:273))) %>%  arrange(date_group)
+  
+  plot_list[[i]] <- ggplot() + 
+    geom_smooth(data = (analysis_df %>% filter(!grepl(strsplit(proj, "\\.")[[1]][1], gcm) & !(grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))), aes(x = date_group, y = value, group = projection, color = "Other"), alpha = 0.1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp))), aes(x = date_group, y = value, group = projection, color = projection), alpha = 1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl('Hist', rcp))), aes(x = date_group, y = value, group = projection, color = "Historical"), alpha = 1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    labs(title=paste("Smoothed Daily PET"), y=paste('PET [mm]'), x=NULL, color='Model') + nps_theme() + 
+    scale_color_manual(values = c("Other" = "gray", 'Historical'='black',setNames(color_names, model_names)), labels = c("Other" = 'Other Models', setNames(scenario_names, model_names))) + 
+    guides(alpha = "none") + scale_x_discrete(breaks = c(274,305,335,1,32,60,91,121,152,182,213,244),labels = c("Oct", "Nov","Dec","Jan","Feb","Mar","Apr","May","Jun",'Jul','Aug','Sep'))
+}
+jpeg(file=paste0(outLocationPathFuture, "/", "Smoothed_Daily_PET_Trends.jpg"), width=300*num_models, height=150*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2); dev.off()
+
+# Deficit distribution
+plot_list <- list()
+for (i in 1:length(model_names)){
+  proj = model_names[i]
+  scenario <- scenario_names[i]
+  
+  analysis_df <- model_df %>% mutate(date_group = yday(date)) %>% group_by(projection, date_group) %>%
+    dplyr::summarize(gcm=first(gcm), rcp=first(rcp), value = mean(deficit, na.rm = TRUE), .groups = 'drop') %>%
+    mutate(date_group = factor(date_group, levels = c(274:366, 1:273))) %>%  arrange(date_group)
+  
+  plot_list[[i]] <- ggplot() + 
+    geom_smooth(data = (analysis_df %>% filter(!grepl(strsplit(proj, "\\.")[[1]][1], gcm) & !(grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))), aes(x = date_group, y = value, group = projection, color = "Other"), alpha = 0.1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp))), aes(x = date_group, y = value, group = projection, color = projection), alpha = 1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl('Hist', rcp))), aes(x = date_group, y = value, group = projection, color = "Historical"), alpha = 1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    labs(title=paste("Smoothed Daily Deficit"), y=paste('Deficit [mm]'), x=NULL, color='Model') + nps_theme() + 
+    scale_color_manual(values = c("Other" = "gray", 'Historical'='black',setNames(color_names, model_names)), labels = c("Other" = 'Other Models', setNames(scenario_names, model_names))) + 
+    guides(alpha = "none") + scale_x_discrete(breaks = c(274,305,335,1,32,60,91,121,152,182,213,244),labels = c("Oct", "Nov","Dec","Jan","Feb","Mar","Apr","May","Jun",'Jul','Aug','Sep'))
+}
+jpeg(file=paste0(outLocationPathFuture, "/", "Smoothed_Daily_Deficit_Trends.jpg"), width=300*num_models, height=150*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2); dev.off()
+
+# Soil water
+plot_list <- list()
+for (i in 1:length(model_names)){
+  proj = model_names[i]
+  scenario <- scenario_names[i]
+  
+  analysis_df <- model_df %>% mutate(date_group = yday(date)) %>% group_by(projection, date_group) %>%
+    dplyr::summarize(gcm=first(gcm), rcp=first(rcp), value = mean(soil_water, na.rm = TRUE), .groups = 'drop') %>%
+    mutate(date_group = factor(date_group, levels = c(274:366, 1:273))) %>%  arrange(date_group)
+  
+  plot_list[[i]] <- ggplot() + 
+    geom_smooth(data = (analysis_df %>% filter(!grepl(strsplit(proj, "\\.")[[1]][1], gcm) & !(grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))), aes(x = date_group, y = value, group = projection, color = "Other"), alpha = 0.1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp))), aes(x = date_group, y = value, group = projection, color = projection), alpha = 1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl('Hist', rcp))), aes(x = date_group, y = value, group = projection, color = "Historical"), alpha = 1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    labs(title=paste("Smoothed Daily Soil Water Content"), y=paste('SWC [mm]'), x=NULL, color='Model') + nps_theme() + 
+    scale_color_manual(values = c("Other" = "gray", 'Historical'='black',setNames(color_names, model_names)), labels = c("Other" = 'Other Models', setNames(scenario_names, model_names))) + 
+    guides(alpha = "none") + scale_x_discrete(breaks = c(274,305,335,1,32,60,91,121,152,182,213,244),labels = c("Oct", "Nov","Dec","Jan","Feb","Mar","Apr","May","Jun",'Jul','Aug','Sep'))
+}
+jpeg(file=paste0(outLocationPathFuture, "/", "Smoothed_Daily_SWC_Trends.jpg"), width=300*num_models, height=150*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2); dev.off()
+
+# SWE
+plot_list <- list()
+for (i in 1:length(model_names)){
+  proj = model_names[i]
+  scenario <- scenario_names[i]
+  
+  analysis_df <- model_df %>% mutate(date_group = yday(date)) %>% group_by(projection, date_group) %>%
+    dplyr::summarize(gcm=first(gcm), rcp=first(rcp), value = mean(accumswe, na.rm = TRUE), .groups = 'drop') %>%
+    mutate(date_group = factor(date_group, levels = c(274:366, 1:273))) %>%  arrange(date_group)
+  
+  plot_list[[i]] <- ggplot() + 
+    geom_smooth(data = (analysis_df %>% filter(!grepl(strsplit(proj, "\\.")[[1]][1], gcm) & !(grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))), aes(x = date_group, y = value, group = projection, color = "Other"), alpha = 0.1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp))), aes(x = date_group, y = value, group = projection, color = projection), alpha = 1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl('Hist', rcp))), aes(x = date_group, y = value, group = projection, color = "Historical"), alpha = 1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    labs(title=paste("Smoothed Daily Snow Water Equivalent"), y=paste('SWE [mm]'), x=NULL, color='Model') + nps_theme() + 
+    scale_color_manual(values = c("Other" = "gray", 'Historical'='black',setNames(color_names, model_names)), labels = c("Other" = 'Other Models', setNames(scenario_names, model_names))) + 
+    guides(alpha = "none") + scale_x_discrete(breaks = c(274,305,335,1,32,60,91,121,152,182,213,244),labels = c("Oct", "Nov","Dec","Jan","Feb","Mar","Apr","May","Jun",'Jul','Aug','Sep'))
+}
+jpeg(file=paste0(outLocationPathFuture, "/", "Smoothed_Daily_SWE_Trends.jpg"), width=300*num_models, height=150*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2); dev.off()
+
+# Runoff
+plot_list <- list()
+for (i in 1:length(model_names)){
+  proj = model_names[i]
+  scenario <- scenario_names[i]
+  
+  analysis_df <- model_df %>% mutate(date_group = yday(date)) %>% group_by(projection, date_group) %>%
+    dplyr::summarize(gcm=first(gcm), rcp=first(rcp), value = mean(runoff, na.rm = TRUE), .groups = 'drop') %>%
+    mutate(date_group = factor(date_group, levels = c(274:366, 1:273))) %>%  arrange(date_group)
+  
+  plot_list[[i]] <- ggplot() + 
+    geom_smooth(data = (analysis_df %>% filter(!grepl(strsplit(proj, "\\.")[[1]][1], gcm) & !(grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))), aes(x = date_group, y = value, group = projection, color = "Other"), alpha = 0.1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp))), aes(x = date_group, y = value, group = projection, color = projection), alpha = 1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl('Hist', rcp))), aes(x = date_group, y = value, group = projection, color = "Historical"), alpha = 1,  
+                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+    labs(title=paste("Smoothed Daily Runoff"), y=paste('Runoff [mm]'), x=NULL, color='Model') + nps_theme() + 
+    scale_color_manual(values = c("Other" = "gray", 'Historical'='black',setNames(color_names, model_names)), labels = c("Other" = 'Other Models', setNames(scenario_names, model_names))) + 
+    guides(alpha = "none") + scale_x_discrete(breaks = c(274,305,335,1,32,60,91,121,152,182,213,244),labels = c("Oct", "Nov","Dec","Jan","Feb","Mar","Apr","May","Jun",'Jul','Aug','Sep'))
+}
+jpeg(file=paste0(outLocationPathFuture, "/", "Smoothed_Daily_Runoff_Trends.jpg"), width=300*num_models, height=150*num_models)
+grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2); dev.off()
+

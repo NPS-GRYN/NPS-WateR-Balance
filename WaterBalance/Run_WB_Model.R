@@ -4,9 +4,7 @@
 # the OpenET dataset. 
 #
 # EDITS IN PROGRESS
-# add code for future projections
 # optimization with AET does not appear to work very well, at least at the monthly time step (NSE < 0)
-# add functionality to run the model many times (like Joseph's wrapper script) - not sure what this should look like
 # clean up, generally make user friendly
 # add info on how to run to the user manual
 # add nice visualizations (including some from Janelle/Connor's code?)
@@ -36,8 +34,7 @@ incompleteMonths = FALSE
 GridMET = TRUE
 fillLeapDays = TRUE 
 future_analysis = TRUE
-runFutureWB = TRUE
-calcFutureWB = TRUE
+calcFutureWB = FALSE
 userSetJTemp = FALSE 
 make_plots = TRUE 
 provide_coords = FALSE
@@ -293,8 +290,11 @@ if(make_plots){
 
 
 
+#######################################################################
+#######################################################################
+### FUTURE ANALYSIS ###
 
-
+if(future_analysis) source("WB/WB_Future_Analysis.R")
 
 
 

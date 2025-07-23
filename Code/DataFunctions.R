@@ -15,7 +15,7 @@ if(!lib_install){
   library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse); library(RColorBrewer)
   library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
   library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table); library(plotly)
-  library(tseries); library(dgof); library(wql); library(trend); library(parallel); library(purrr); library(elevatr); library(DEoptim)
+  library(tseries); library(dgof); library(wql); library(trend); library(parallel); library(purrr); library(elevatr); library(ggalt)
   lib_install <- TRUE
 }
 
