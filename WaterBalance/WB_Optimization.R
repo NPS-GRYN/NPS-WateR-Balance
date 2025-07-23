@@ -34,7 +34,7 @@ elpTimeM <- Sys.time() - strtTimeM
 
 
 # Define the water balance variables from the best run
-optValuesM <- data.frame(nseM = optMonth_init@fitnessValue, optMonth_init@solution)
+optValuesM <- data.frame(nse_adj = optMonth_init@fitnessValue, optMonth_init@solution)
 gw_add=optValuesM$gw_add; vfm=optValuesM$vfm; jrange=optValuesM$jrange; hock=optValuesM$hock
 hockros=optValuesM$hockros; dro=optValuesM$dro; mondro=optValuesM$mondro; aspect=optValuesM$aspect
 slope=optValuesM$slope; shade.coeff=optValuesM$shade.coeff; SWC.Max=optValuesM$SWC.Max; jtemp=optValuesM$jtemp

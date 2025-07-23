@@ -134,8 +134,7 @@ for (j in 1:length(gcms)){
   futures <-rbind(futures, drainage_qsvt)
 }
 
-# Filter out futures that overlap with the date of the historic flow, extract GCM and RCP
-futures<- futures[year(futures$date) > endY,]
+# Extract GCM and RCP
 futures$gcm <- sapply(X = strsplit(futures$projection, split=".rcp"), FUN = "[", 1) 
 futures$rcp <- as.numeric(x = sapply(strsplit(futures$projection, split=".rcp"), FUN = "[", 2)) 
 
@@ -161,8 +160,9 @@ daily_df$date <- as.Date(daily_df$date); daily_df$yr<-as.numeric(format(daily_df
 daily_df$water_year <- sapply(daily_df$date, get_water_year); 
 daily_df <- daily_df %>% group_by(water_year) %>% mutate(water_day = (as.integer(difftime(date,ymd(paste0(water_year - 1 ,'-09-30')), units = "days"))))
 daily_df<-daily_df[,c("date", "projection", "gcm", "rcp", "yr", "mo", "yr_mo", "water_year", "adj_runoff", "quick", "slow", "veryslow", "total")]
-daily_df$Period<-ifelse(daily_df$yr<=2022,"Historical",ifelse (daily_df$yr>=2023 & daily_df$yr<=2050,"Early",
-                                           ifelse (daily_df$yr>=2051 & daily_df$yr<=2070,"Middle", ifelse (daily_df$yr>=2071, "Late","NA"))))
+daily_df$Period<-ifelse(daily_df$yr<=2005,"Historical",ifelse (daily_df$yr>=2006 & daily_df$yr<=2050,"Early",
+                                                               ifelse (daily_df$yr>=2051 & daily_df$yr<=2070,"Middle", ifelse (daily_df$yr>=2071, "Late","NA"))))
+
 
 # Aggregate data to annual
 annual_df <- as.data.frame(daily_df %>% group_by(gcm, rcp, yr) %>%
@@ -205,7 +205,7 @@ num_models <- length(model_names)
 
 
 #######################################################################
-### GET MACA DATA FOR SELECTED CLIMATE FUTURES ###
+### GET MACA DATA FOR CLIMATE FUTURES ###
 # edit so only 4 climate futures are selected
 if(point_location){
   if(!file.exists(here('Data',SiteID_FileName,paste('Historical_Streamflow_Projections',SiteID_FileName, "1960_2005_point.csv", sep='_')))){
@@ -275,8 +275,9 @@ model_df$yr<-as.numeric(format(model_df$date,"%Y")); model_df$mo<-format(model_d
 model_df$water_year <- sapply(model_df$date, get_water_year); 
 model_df <- model_df %>% group_by(water_year) %>% mutate(water_day = (as.integer(difftime(date,ymd(paste0(water_year - 1 ,'-09-30')), units = "days"))))
 model_df<-model_df[,c("date", "projection", "gcm", "rcp", "yr", "mo", "yr_mo", "water_year", "adj_runoff", "quick", "slow", "veryslow", "total")]
-model_df$Period<-ifelse(model_df$yr<=2022,"Historical",ifelse (model_df$yr>=2023 & model_df$yr<=2050,"Early",
+model_df$Period<-ifelse(model_df$yr<=2005,"Historical",ifelse (model_df$yr>=2006 & model_df$yr<=2050,"Early",
                                                                ifelse (model_df$yr>=2051 & model_df$yr<=2070,"Middle", ifelse (model_df$yr>=2071, "Late","NA"))))
+
 
 # Aggregate data to annual
 model_annual_df <- as.data.frame(model_df %>% group_by(gcm, rcp, yr) %>%
@@ -361,7 +362,6 @@ if(make_plots){
   
   
   # Climate future scatterplot: annual magnitude vs daily standard deviation
-  # EDIT
   delta_plot_ann <- (model_annual_df %>% filter(rcp!="Historical")) %>% 
     left_join((model_annual_df %>% filter(rcp=="Historical")) %>% group_by(gcm) %>% summarize(mean_total=mean(total, na.rm=TRUE)), by = "gcm") %>%
     mutate(delta_annual_mm=total-mean_total)
@@ -380,7 +380,7 @@ if(make_plots){
   annual_zero <- data.frame(Period = c("Early", "Middle", "Late"), xintercept=c(0,0,0)); sd_zero <- data.frame(Period = c("Early", "Middle", "Late"), yintercept = c(0,0,0))
   
   # plot with RCPs
-  jpeg(file=paste0(outLocationPathFuture, "/Streamflow_Climate_Future_Scatter_RCP_GridMET.jpg"), width=1000, height=400)
+  jpeg(file=paste0(outLocationPathFuture, "/Streamflow_Climate_Future_Scatter_RCP.jpg"), width=1000, height=400)
   plot <- ggplot(data=delta_plot, aes(x=delta_annual_mm,y=delta_daily_sd,color=rcp)) + geom_point() +
     geom_text_repel(aes(label = gcm), color = 'black', max.overlaps=Inf) +
     geom_hline(data = sd_quantile, aes(yintercept = yintercept), color = "black") + geom_vline(data = annual_quantile, aes(xintercept = xintercept), color = "black") +
@@ -391,7 +391,7 @@ if(make_plots){
   dev.off()
   
   # plot with selected climate futures
-  jpeg(file=paste0(outLocationPathFuture, "/Streamflow_Climate_Future_GridMET.jpg"), width=1000, height=400)
+  jpeg(file=paste0(outLocationPathFuture, "/Streamflow_Climate_Future.jpg"), width=1000, height=400)
   plot <- ggplot(data=delta_plot) + 
     geom_point(data=delta_plot %>% filter(!(projection %in% model_names)), aes(x=delta_annual_mm,y=delta_daily_sd,color='Other')) +
     geom_point(data=delta_plot %>% filter(projection %in% model_names), aes(x=delta_annual_mm,y=delta_daily_sd,color=projection)) + 

@@ -4,7 +4,6 @@
 # the OpenET dataset. 
 #
 # EDITS IN PROGRESS
-# figures for comparison with openET observations
 # add code for future projections
 # optimization with AET does not appear to work very well, at least at the monthly time step (NSE < 0)
 # add functionality to run the model many times (like Joseph's wrapper script) - not sure what this should look like
@@ -237,18 +236,19 @@ if(make_plots){
 # unless the model calibration has been PET to ETo.
 
 # Daily, monthly, annual aggregation with measured and modeled ET
-hist_pet_daily <- merge(xts(with(DailyWB, cbind(PET)), order.by = as.Date(DailyWB$date)), DailyETo); hist_pet_daily <- hist_pet_daily[complete.cases(hist_pet_daily),]
-colnames(hist_pet_daily) <- c("Mod", "Meas")
+hist_pet_daily <- merge(xts(with(DailyWB, cbind(PET)), order.by = as.Date(DailyWB$date)), DailyETo); hist_pet_daily <- hist_pet_daily[complete.cases(hist_pet_daily),]; colnames(hist_pet_daily) <- c("Mod", "Meas")
+hist_pet_daily$Mod <- hist_pet_daily$Mod * k_c
 hist_pet_monthly <- apply.monthly(xts(with(DailyWB, cbind(PET)), order.by = as.Date(DailyWB$date)), function(x) {colSums(x, na.rm = TRUE)})
 index(hist_pet_monthly) <- as.Date(format(index(hist_pet_monthly), "%Y-%m-01"))
 hist_pet_monthly <- merge(hist_pet_monthly, MonthlyETo); hist_pet_monthly <- hist_pet_monthly[complete.cases(hist_pet_monthly),]; colnames(hist_pet_monthly) <- c("Mod", "Meas")
+hist_pet_monthly$Mod <- hist_pet_monthly$Mod * k_c
 hist_pet_ann <- apply.yearly(hist_pet_monthly, function(x) {colSums(x, na.rm = TRUE)})
 
 
 #######################################################################
 ### Create summary plots ###
 
-# scatterplot of Historical Measured vs Modeled Streamflow for daily, monthly, annual aggregation
+# scatterplot of Historical Measured vs Modeled PET for daily, monthly, annual aggregation
 # there are two trend lines in the scatter plot because the intercept is set to 0 in one and allowed to vary in the other
 if(make_plots){
   jpeg(file=paste0(outLocationPath, "/", "Historical_Measured_Modeled_PET_Scatter.jpg"), width=1000, height=400); par(mfrow=c(1,3))
