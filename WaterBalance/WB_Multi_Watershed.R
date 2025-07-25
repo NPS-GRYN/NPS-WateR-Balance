@@ -1,6 +1,8 @@
 # ---------------------------------------------------------------------
-# This script contains code for running and calibrating the streamflow model
+# This script contains code for running and calibrating the water balance model
 # across multiple watersheds without additional user-provided input. 
+#
+# TEST
 # ---------------------------------------------------------------------
 
 ### Load libraries and function files ###
@@ -16,28 +18,25 @@ watershed_gageid <- c("03497300", "03460000")
 watershed_foldername <- c('optim', 'optim')
 num_watersheds <- length(watershed_siteid)
 
-
 #######################################################################
 #######################################################################
 ### SET PARAMETERS FOR ALL WATERSHEDS ###
 # These parameters will be used for all watersheds
 # To experiement with the effects of parameter changes on calibration, use
-# the Streamflow_Multi_Parameter.R script.
-
+# the WB_Multi_Parameter.R script.
 PETMethod = "Oudin" 
-optimization = FALSE 
-delayStart = FALSE 
-NonZeroDrainInitCoeff = FALSE
+optimization = TRUE
+optimization_var = 'AET'
+delayStart = TRUE 
 incompleteMonths = FALSE 
 GridMET = TRUE
 fillLeapDays = TRUE 
-historical_analysis = TRUE
 future_analysis = TRUE
-calcFutureWB = TRUE  
+calcFutureWB = FALSE
 userSetJTemp = FALSE 
 make_plots = TRUE 
+provide_coords = FALSE
 point_location = FALSE
-flow_components = 3
 percent_skill_cutoff = 0.1 
 
 ### Define time period for historical analysis ###
@@ -51,23 +50,17 @@ gcm_list <- c('BNU-ESM', 'CCSM4', 'CNRM-CM5', 'CSIRO-Mk3-6-0', 'CanESM2','GFDL-E
               'IPSL-CM5A-LR', 'MIROC5', 'MIROC-ESM-CHEM','MRI-CGCM3', 'NorESM1-M', 'inmcm4')
 
 ### Default model parameters ###
-# IHACRES flow coefficients
-if(flow_components==3){
-  qa<-0.62; qb<-0.22; sa<-0.58; sb<-0.06; va<-0.974; vb<-calc_vb(qa,qb,sa,sb,va)
-}else if(flow_components==2){
-  qa<-0; qb<-0; sa<-0.58; sb<-0.06; va<-0.974; vb<-calc_vb(qa,qb,sa,sb,va) 
-} else{print('invalid number of flow components')}
-
 # Water balance variables
 gw_add=0; vfm = 0.7555; jtemp = 1.982841; jrange = 3 ;hock = 4; hockros = 4; 
 dro = 0; mondro = 0; aspect = 180; slope= 0; shade.coeff= 1; SWC.Max = 200
+k_c = 1; et_slope = 1; et_bias = 0
 
 # Non-optimized WB variables
 Soil.Init = SWC.Max; Snowpack.Init = 0; T.Base = 0 
 
 # Water balance optimization limits
-WB_lower = c(gw_add=0, vfm = 0.25, jrange = 1, hock = 0.25, hockros = 0.25, dro= 0, mondro = 0, aspect= 0, slope =  0, shade.coeff = 0.1, SWC.Max = 10, jtemp = jtemp-0.5)
-WB_upper = c(gw_add = 1, vfm = 1, jrange = 5, hock = 8, hockros = 8, dro = 1, mondro = 1, aspect = 360, slope = 90, shade.coeff = 1, SWC.Max = 400, jtemp = jtemp+0.5)
+WB_lower = c(gw_add=0, vfm = 0.25, jrange = 1, hock = 0.25, hockros = 0.25, dro= 0, mondro = 0, aspect= 0, slope =  0, shade.coeff = 0.1, SWC.Max = 10,  jtemp = jtemp-0.5, k_c=0, et_slope=-5, et_bias=-5)
+WB_upper = c(gw_add = 1, vfm = 1, jrange = 5, hock = 8, hockros = 8, dro = 1, mondro = 1, aspect = 360, slope = 90, shade.coeff = 1, SWC.Max = 400,  jtemp = jtemp+0.5, k_c=5, et_slope=5, et_bias=5)
 
 ### Optional scaling factors for GridMET ###
 # if no scaling, set slopes to 1 and bias to 0
@@ -120,53 +113,40 @@ for(i in 1:num_watersheds){
   # Historical meteorological data
   if(GridMET) {
     if(point_location){DailyClimData <- get_gridmet_point(SiteID_FileName, startY, endY, lat, lon, dataPath,
-                                         tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope)
+                                                          tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope)
     } else {DailyClimData <- get_gridmet_area(SiteID_FileName, startY, endY, aoi, dataPath,
-                                        tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope)}
+                                              tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope)}
   } else { 
     if(point_location){DailyClimData <- get_daymet_point(SiteID_FileName, startY, endY, lat, lon, dataPath)
     } else{DailyClimData <- get_daymet_area(SiteID_FileName, startY, endY, aoi, dataPath)}
   }
   
+  # OpenET data
+  MonthlyET <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', 'ET', dataPath)
+  DailyET <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', 'ET', dataPath)
+  
+  MonthlyETo <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', 'ETo', dataPath)
+  DailyETo <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', 'ETo', dataPath)
+  
   
   #######################################################################
   # Run model
   
-  ### Get initial flow conditions or set all to 0
-  if(NonZeroDrainInitCoeff){
-    InitCond <- get_Init_Drain_Coef(DailyClimData, gw_add, vfm , jrange ,hock, hockros, dro, mondro , aspect, slope, shade.coeff, jtemp, SWC.Max, 
-                                    Soil.Init, Snowpack.Init, T.Base, PETMethod,q0, s0, v0, qa, qb, sa, sb, va, vb, lat, lon, cutoffYear)
-    q0 = InitCond[["Quick"]]; s0= InitCond[["Slow"]]; v0 = InitCond[["Very_Slow"]]
-  } else{
-    q0<-0; s0<-0; v0<-0
-  }
-  
   # Call optimization routine
-  if(optimization){
-    source('Streamflow//Streamflow_Optimization.R')
-  }
+  if(optimization) source('WaterBalance//WB_Optimization.R')
   
   # Run model
   DailyWB<- WB(DailyClimData, gw_add, vfm, jrange,hock, hockros, dro, mondro, aspect, slope,
-               shade.coeff, jtemp,SWC.Max, 1, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon, "")
-  DailyDrain <- Drain(DailyWB, q0, s0, v0, qa, qb, sa, sb, va, vb)
-  MeasMod<- MeasModWB(DailyDrain, meas_flow_mon, cutoffYear)
+               shade.coeff, jtemp,SWC.Max, k_c, et_slope, et_bias, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon, "")
   
   
   #######################################################################
   # Analysis
-
-  # Model accuracy
-  #source('Streamflow//Streamflow_Model_Accuracy.R')
   
-  # Historical streamflow analysis
-  if(historical_analysis){
-  #  source('Streamflow//Streamflow_Historical_Analysis.R')
-  }
+  # Model accuracy
+  source('WB/WB_Model_Accuracy.R')
   
   # Future streamflow projections
-  if(future_analysis){
-    source("Streamflow//Streamflow_Future_Analysis.R")
-  }
+  if(future_analysis) source("WaterBalance//WB_Future_Analysis.R")
 }
 

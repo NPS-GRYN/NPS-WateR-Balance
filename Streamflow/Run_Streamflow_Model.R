@@ -6,12 +6,6 @@
 # provide their own coordinates if they simply want to run the model.
 # See the User Manual for a more detailed description of the model.
 #
-# EDITS IN PROGRESS:
-# add functionality to run the model many times (like Joseph's wrapper script) - not sure what this should look like
-# clean up, generally make user friendly
-# add info on how to run to the user manual
-# add code for watershed averages, not just centroids
-# CONSISTENCY IN NAMING THINGS: projection and date are all lowercase
 # ---------------------------------------------------------------------
 
 
@@ -45,11 +39,11 @@ point_location = FALSE
 flow_components = 3
 percent_skill_cutoff = 0.1 
 FolderName = "optim" 
-#filename_future_wb = "\\Users\\mcburns\\OneDrive - DOI\\water-balance\\Data\\LittleRiver\\littleriver_water_balance_future.csv"
 
 ### Define watershed ###
+# USGS gage number: https://waterdata.usgs.gov/nwis/rt
 SiteID = "Wet Beaver Creek"; SiteID_FileName = gsub(pattern = " ", x = SiteID, replacement = "")
-GageSiteID <- '09505200'                  #define stream gage location (RWC: "11460151", LR: 03497300, C: 03460000)
+GageSiteID <- '09505200'
 
 ### Provide geographic data or pull shapefile from StreamStats database ###
 if(provide_coords) {
@@ -64,7 +58,6 @@ region <- get_region(lat,lon)
 startY = 1979; startM = 01; startD = 01 
 endY = 2023; endM = 12; endD = 31
 if(delayStart){ cutoffYear = startY+11 }else{cutoffYear = startY} 
-
 
 ### Model names for future streamflow ###
 gcm_list <- c('BNU-ESM', 'CCSM4', 'CNRM-CM5', 'CSIRO-Mk3-6-0', 'CanESM2','GFDL-ESM2G', 'HadGEM2-CC365', 
@@ -177,9 +170,7 @@ if(NonZeroDrainInitCoeff){
 
 
 ### Call optimization routine to get optimal variables ###
-if(optimization){
-  source('Streamflow//Streamflow_Optimization.R')
-}
+if(optimization) source('Streamflow//Streamflow_Optimization.R')
 
 
 ### Run model ###
@@ -199,13 +190,9 @@ source('Streamflow//Streamflow_Model_Accuracy.R')
 
 
 ### HISTORICAL STREAMFLOW ANALYSIS ###
-if(historical_analysis){
-  source('Streamflow//Streamflow_Historical_Analysis.R')
-}
+if(historical_analysis) source('Streamflow//Streamflow_Historical_Analysis.R')
 
 
 ### FUTURE STREAMFLOW PROJECTIONS ###
-if(future_analysis){
-  source("Streamflow//Streamflow_Future_Analysis.R")
-}
+if(future_analysis) source("Streamflow//Streamflow_Future_Analysis.R")
 

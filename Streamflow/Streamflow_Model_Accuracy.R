@@ -5,8 +5,6 @@
 # This script is not intended to be run independently; it must be called from 
 # the main Run_Streamflow_Model.R script.
 #
-# EDITS IN PROGRESS:
-# make sure it all works
 # ---------------------------------------------------------------------
 
 

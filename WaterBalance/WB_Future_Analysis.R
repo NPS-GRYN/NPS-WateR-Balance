@@ -21,12 +21,14 @@ gcm_list <- gcm_list[!gcm_list %in% low_skill_models$GCM]
 if(!calcFutureWB){
   # Pull directly from website
   future_wb_conus <- get_conus_wb(SiteID_FileName, lat, lon, endY, 2099)
-  #if(file.exists(filename_future_wb)) {
-  #  future_wb_conus <- get_conus_wb_direct(SiteID_FileName, dataPath, filename_future_wb)
-  #} 
+  
+  # Uncomment to access file (obtained directly from Mike Tercek)
+  # Add name of path
+  #filename_future_wb = ""  
+  #if(file.exists(filename_future_wb)) future_wb_conus <- get_conus_wb_direct(SiteID_FileName, dataPath, filename_future_wb)
   
   # If neither version can be accessed, calculate water balance
-  if(anyNA(future_wb_conus)){
+  if(!exists("future_wb_conus")){
     calcFutureWB <- TRUE
   }
 }

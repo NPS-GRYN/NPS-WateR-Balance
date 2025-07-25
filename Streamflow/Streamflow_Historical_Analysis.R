@@ -232,7 +232,7 @@ if(make_plots){
   jpeg(file=paste0(outLocationPathHist, "/", "Monthly_Flow_Trends.jpg"), width=600, height=400)
   plot_meas <- ggplot(meas_flow_mon, aes(x = as.yearmon(YrMon), y = MeasMM)) + geom_line(aes(group='Measured', color = 'Measured', linetype='Measured'), na.rm=TRUE, linewidth=1) +
     geom_smooth(method = "loess", formula = y ~ x, aes(group='Trend', color = 'Trend', linetype='Trend')) +
-    geom_vline(aes(xintercept=as.yearmon(meas_flow_mon[['YrMon']][pett_test$change.point]), group='Change Point', color='Change Point', linetype='Change Point'), linewidth=1) + 
+    geom_vline(aes(xintercept=as.yearmon(.data[['YrMon']][pett_test$change.point]), group='Change Point', color='Change Point', linetype='Change Point'), linewidth=1) + 
     labs(x = "Water Year", y = "Streamflow (mm)", title = "Monthly Measured Streamflow", color='', linetype='') +
     nps_theme() + theme(legend.position = 'bottom') +
     scale_color_manual(values = c("Measured" = "black", "Trend" = "red", 'Change Point'='red')) +
@@ -377,7 +377,7 @@ dev.off()
 ### Customizable plots: metric, season, etc ###
 
 # define flow level in cfs 
-flow_level <- 1250
+flow_level <- 580
 # identify months of interest (numerical values)
 mos <- c(2, 3) 
 # is comparison above or below threshold?
