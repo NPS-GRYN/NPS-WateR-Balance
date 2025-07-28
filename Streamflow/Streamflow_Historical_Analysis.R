@@ -413,3 +413,8 @@ runoff_efficiency$efficiency <- runoff_efficiency$ann_stream / runoff_efficiency
 jpeg(file=paste0(outLocationPathHist, "/", "Annual_Efficiency_Trends.jpg"), width=600, height=400)
 plot_trends(runoff_efficiency$water_year, runoff_efficiency$efficiency, 'Streamflow Efficiency', "Streamflow : Precipitation Ratio", FALSE)
 dev.off()
+
+# plot for only the last 20 years
+jpeg(file=paste0(outLocationPathHist, "/", "Annual_Efficiency_Trends.jpg"), width=600, height=400)
+plot_trends((runoff_efficiency %>% filter(water_year>2000))$water_year, (runoff_efficiency %>% filter(water_year>2000))$efficiency, 'Streamflow Efficiency', "Streamflow : Precipitation Ratio", FALSE)
+dev.off()
