@@ -22,23 +22,33 @@ setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setw
 
 #######################################################################
 ### Set user-defined variables ###
-PETMethod = "Oudin" 
+# General variables
 optimization = FALSE 
-delayStart = FALSE 
-NonZeroDrainInitCoeff = FALSE
+historical_analysis = TRUE
+future_analysis = TRUE
+point_location = FALSE
+provide_coords = FALSE
+calcFutureWB = TRUE 
+make_plots = TRUE
+percent_skill_cutoff = 0.1
+
+# Meteorological data variables
 incompleteMonths = FALSE 
 GridMET = TRUE
 fillLeapDays = TRUE 
-historical_analysis = TRUE
-future_analysis = TRUE
-calcFutureWB = TRUE  
+
+# Water balance variables
+PETMethod = "Oudin"
 userSetJTemp = FALSE 
-make_plots = TRUE 
-provide_coords = FALSE
-point_location = FALSE
+
+# Streamflow variables
+delayStart = FALSE 
+NonZeroDrainInitCoeff = FALSE
 flow_components = 3
-percent_skill_cutoff = 0.1 
+
+# Folder name
 FolderName = "optim" 
+
 
 ### Define watershed ###
 # USGS gage number: https://waterdata.usgs.gov/nwis/rt

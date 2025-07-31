@@ -199,8 +199,7 @@ get_gridmet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath,
 
 
 # Scrape GridMET meteorological data and clean
-# write code for AOI - doesn't work currently
-# Args:
+# check accuracy before using!
 # Returns: 
 #   Dataframe with meteorological data at daily time scale
 get_gridmet_area <- function(SiteID_FileName, startY, endY, aoi, dataPath,
@@ -258,8 +257,7 @@ get_gridmet_area <- function(SiteID_FileName, startY, endY, aoi, dataPath,
 
 
 # Scrape Daymet meteorological data for point and clean
-# EDIT DATE FUNCTIONS
-# Args:
+# check accuracy before using!
 # Returns:
 #   Dataframe with Daymet meteorological data from point location at daily time scale
 get_daymet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath){
@@ -319,8 +317,7 @@ get_daymet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath){
 
 
 # Scrape Daymet meteorological data for area and clean
-# make sure this all works
-# Args:
+# check accuracy before using!
 # Returns:
 #   Dataframe with Daymet meteorological data from watershed average at daily time scale
 get_daymet_area <-  function(SiteID_FileName, startY, endY, aoi, dataPath){
@@ -393,8 +390,7 @@ get_daymet_area <-  function(SiteID_FileName, startY, endY, aoi, dataPath){
 
 
 # Pull MACA projections for a single point and clean data
-# Args:
-# Returns:
+# check accuracy before using!
 get_maca_point <- function(lat, lon, startY, endY, SiteID_FileName, gcm_list){
   if(startY < 2006) startY <- 2006; if(endY > 2100) endY <- 2100
   if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, startY, endY, 'point.csv', sep='_')))){
@@ -441,9 +437,7 @@ get_maca_point <- function(lat, lon, startY, endY, SiteID_FileName, gcm_list){
 
 
 # Pull future MACA projections for an area of interest and clean data
-# doesn't work, wrong order
-# Args:
-# Returns:
+# check accuracy before using!
 get_maca_area <- function(aoi, startY, endY, SiteID_FileName, gcm_list){
   if(startY < 2006) startY <- 2006; if(endY > 2100) endY <- 2100
   if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, startY, endY, 'area.csv', sep='_')))){
@@ -521,8 +515,7 @@ get_maca_area <- function(aoi, startY, endY, SiteID_FileName, gcm_list){
 
 
 # Pull historical MACA projections for lat/lon point and clean data
-# Args:
-# Returns:
+# check accuracy before using!
 get_maca_hist_point <- function(lat, lon, startY, endY, SiteID_FileName, model_names){
   if(startY < 1960) startY <- 1960; if(endY > 2005) endY <- 2005
   if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, startY, endY, 'point.csv', sep='_')))){
@@ -554,6 +547,8 @@ get_maca_hist_point <- function(lat, lon, startY, endY, SiteID_FileName, model_n
 
 
 
+# Pull historical MACA projections for spatial area of interest and clean data
+# check accuracy before using!
 get_maca_hist_area <- function(aoi, startY, endY, SiteID_FileName, model_names){
   if(startY < 1960) startY <- 1960; if(endY > 2005) endY <- 2005
   if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, startY, endY, 'area.csv', sep='_')))){
@@ -856,7 +851,6 @@ ID.redundant.gcm <- function(PCA){
 
 
 # Select future climate means
-# make this function better and not just storage for other code
 select_climate_futures <- function(color_names){
   if(!file.exists(here('Data', SiteID_FileName, paste0(paste('Future_TP_Means',SiteID_FileName, sep='_'), ".csv")))){
     ### Pull meteorological data ###

@@ -64,10 +64,22 @@ gcm_list <- c('BNU-ESM', 'CCSM4', 'CNRM-CM5', 'CSIRO-Mk3-6-0', 'CanESM2','GFDL-E
 #######################################################################
 ### Set model variables ###
 
-# Default water balance variables
-gw_add=0; vfm = 0.7555; jtemp = 1.982841; jrange = 3; hock = 4; hockros = 4; 
-dro = 0; mondro = 0; aspect = 180; slope= 0; shade.coeff= 1; SWC.Max = 200
-k_c = 1; et_slope = 1; et_bias = 0
+# Read in previously optimized variables from results file, if they exist
+if(file.exists(paste0(outLocationPath, "/optim_results.rds"))){
+  results <- readRDS(paste0(outLocationPath, "/optim_results.rds"))
+  gw_add <- results$gw_add; vfm <- results$vfm; jrange <- results$jrange; hock <- results$hock; hockros <- results$hockros; dro <- results$dro; 
+  mondro <- results$mondro; aspect <- results$aspect; slope <- results$slope; shade.coeff <- results$shade.coeff; SWC.Max <- results$SWC.Max; 
+  k_c <- results$k_c; et_slope <- results$et_slope; et_bias <- results$et_bias
+  
+  # If not, manually set variables
+} else {
+  # Default water balance variables
+  gw_add=0; vfm = 0.7555; jtemp = 1.982841; jrange = 3 ;hock = 4; hockros = 4; 
+  dro = 0; mondro = 0; aspect = 180; slope= 0; shade.coeff= 1; SWC.Max = 200
+  k_c = 1; et_slope = 1; et_bias = 0
+}
+
+# Non-optimized WB variables
 Soil.Init = SWC.Max; Snowpack.Init = 0; T.Base = 0  
 
 # Get j_temp

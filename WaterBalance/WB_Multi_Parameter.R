@@ -68,7 +68,7 @@ v = tibble(
   Soil.Init = SWC.Max, Snowpack.Init = 0, T.Base = 0,
 )
 
-### Create second row of variables and change as desired ###
+### Create additional rows of variables and change as desired ###
 v[2,] <- v[1,]; v[3,] <- v[1,]
 v[2,"PETMethod"] = "Penman"; v[2,"FolderName"] = "optim_Penman" 
 v[3,"PETMethod"] = "Hamon"; v[3,"FolderName"] = "optim_Hamon" 

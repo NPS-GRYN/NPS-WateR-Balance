@@ -2,23 +2,13 @@
 # This file contains the code to run the water balance model and compare to a calibrated excel sheet
 # Currently the code will only work for pre-calibrated streamflow projections at Frog Rock.
 # 
-# EDITS IN PROGRESS
-# compare optimized code to spreadsheet model
-# add crosscheck of streamflow model (WB + IHACRES)
-# develop "worksheet" where it is easy for users to play with parameters and see impact on streamflow
-# go through the rest of the crosscheck folder and figure out what is worth keeping/what's not
 # ---------------------------------------------------------------------
 
 #######################################################################
 ### Load libraries ###
-library(sf); library(raster); library(ggplot2); library(dplyr); library(xts)
-library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse)
-library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); 
-library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally)
-
-### Source in function files ###
-path <- here() 
+library('here'); lib_install <- FALSE
 setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setwd(here())
+
 
 #######################################################################
 ### Set model variables ###
@@ -38,7 +28,7 @@ endDate<-  ymd(paste(1981, 12, 31))
 
 #######################################################################
 ### GET INPUT DATA ### 
-DailyClimData <- read.csv(here("RExcelCrossCheckWetBeaver/FrogRock_Input.csv"))
+DailyClimData <- read.csv(here('Validation', "FrogRock_Input.csv"))
 
 # Match format of GridMET data
 DailyClimData$date <- make_date(DailyClimData$year, 1) + (DailyClimData$yday-1)
@@ -52,15 +42,15 @@ colnames(DailyClimData)<- c("dayl..s." , "pr","srad" ,"tmmx", "tmmn", "vp..Pa." 
 #######################################################################
 ### RUN WATER BALANCE ###
 DailyWB_R <- WB(DailyClimData, gw_add, vfm, jrange, hock, hockros, dro, mondro, aspect,
-             slope, shade.coeff, jtemp, SWC.Max, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon)
+             slope, shade.coeff, jtemp, SWC.Max, 1, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod, lat, lon, "")
 
-write.csv(DailyWB_R, here('RExcelCrossCheckWetBeaver/FrogRock_R_Output.csv'), row.names = FALSE) 
+write.csv(DailyWB_R, here('Validation/FrogRock_R_Output.csv'), row.names = FALSE) 
 
 
 #######################################################################
 ### COMPARE TO EXCEL AND PYTHON OUTPUT ###
-DailyWB_Excel <- read.csv(here('RExcelCrossCheckWetBeaver/FrogRock_Excel_Output.csv'))
-DailyWB_Python <-read.csv(here('RExcelCrossCheckWetBeaver/FrogRock_Python_Output.csv'))
+DailyWB_Excel <- read.csv(here('Validation/FrogRock_Excel_Output.csv'))
+DailyWB_Python <-read.csv(here('Validation/FrogRock_Python_Output.csv'))
 
 ### PLOT ###
 wb_vars <- c('SOIL','AET','D','PET','PACK','SNOW')
