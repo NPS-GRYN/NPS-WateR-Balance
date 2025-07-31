@@ -5,9 +5,6 @@
 # gridded water balance model produced/maintained by Mike Tercek. This code also provides 
 # preliminary visualizations of these future streamflow projections. 
 # 
-# EDITS IN PROGRESS
-# double check that this all works, post-MACA updates
-# add additional box plots?
 # ---------------------------------------------------------------------
 
 
@@ -300,7 +297,6 @@ model_monthly_df$date<-as.Date(paste(model_monthly_df$yr_mo,"-01",sep=""))
 #######################################################################
 #######################################################################
 ### PLOTS WITH ALL MODELS (MACA HISTORICAL) ###
-# %>% filter(grepl(paste(sapply(strsplit(model_names, "\\."), `[`, 1), collapse = "|"), gcm))
 
 if(make_plots){
   # Daily streamflow projections for all models
@@ -390,7 +386,7 @@ if(make_plots){
   dev.off()
   
   # plot with selected climate futures
-  jpeg(file=paste0(outLocationPathFuture, "/Streamflow_Climate_Future.jpg"), width=1000, height=400)
+  jpeg(file=paste0(outLocationPathFuture, "/Streamflow_Climate_Future.jpg"), width=1500, height=600)
   plot <- ggplot(data=delta_plot) + 
     geom_point(data=delta_plot %>% filter(!(projection %in% model_names)), aes(x=delta_annual_mm,y=delta_daily_sd,color='Other')) +
     geom_point(data=delta_plot %>% filter(projection %in% model_names), aes(x=delta_annual_mm,y=delta_daily_sd,color=projection)) + 
@@ -973,9 +969,9 @@ if(point_location) {future_climate <- get_maca_point(lat, lon, 2006, 2100, SiteI
 } else future_climate <- get_maca_area(aoi, 2006, 2100, SiteID_FileName, gcm_list)
 
 runoff_efficiency <- model_df %>% group_by(water_year, projection) %>% dplyr::summarize(gcm=first(gcm), rcp=first(rcp), ann_runoff=sum(adj_runoff))
-hist_p <- maca_hist %>% mutate(water_year = sapply(date, get_water_year)) %>% group_by(water_year, projection) %>% dplyr::summarize(gcm=first(projection), ann_p=sum(pr)) %>% mutate(projection=paste0(gcm, ".Hist"), rcp="Historical") %>% filter(water_year != 2005)
+hist_p <- maca_hist %>% mutate(water_year = sapply(date, get_water_year)) %>% group_by(water_year, projection) %>% dplyr::summarize(gcm=first(projection), ann_p=sum(pr)) %>% mutate(projection=paste0(gcm, ".Hist"), rcp="Historical")
 fut_p <- future_climate %>% mutate(water_year = sapply(date, get_water_year)) %>% group_by(water_year, projection) %>% dplyr::summarize(gcm=first(strsplit(projection, "\\.")[[1]][1]), rcp=first(gsub("\\D", "", strsplit(projection, "\\.")[[1]][2])), ann_p=sum(pr))
-runoff_efficiency <- runoff_efficiency %>% full_join(bind_rows(hist_p, fut_p), by = c('water_year', 'projection', 'gcm', 'rcp'))
+runoff_efficiency <- runoff_efficiency %>% full_join(bind_rows(hist_p, fut_p), by = c('water_year', 'projection', 'gcm', 'rcp')) %>% filter(water_year!=2100 & water_year!=1960 & water_year!=2005 & water_year!=2006)
 runoff_efficiency$efficiency <- (runoff_efficiency$ann_runoff / runoff_efficiency$ann_p) * 100
 
 # Plot
@@ -984,7 +980,7 @@ for (i in 1:length(model_names)){
   proj = model_names[i]
   scenario <- scenario_names[i]
   
-  analysis_df <- runoff_efficiency %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp))) %>% filter(water_year!=2100 & water_year!=2005)
+  analysis_df <- runoff_efficiency %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp))) 
   mod_mk <- MannKendall(analysis_df$efficiency)
   mod_sens <- sens.slope(analysis_df$efficiency[!is.na(analysis_df$efficiency)])
   if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)

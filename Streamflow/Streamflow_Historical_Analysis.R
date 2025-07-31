@@ -5,9 +5,6 @@
 # This code also provides preliminary analyses and visualizations of historical streamflow. 
 # All trend analyses assume p < 0.05 is significant; this can be changed in the code
 # 
-# EDITS IN PROGRESS
-# make script so it can be run independently or in conjunction with main script
-# figure out how to export 3D plot
 # ---------------------------------------------------------------------
 
 #######################################################################

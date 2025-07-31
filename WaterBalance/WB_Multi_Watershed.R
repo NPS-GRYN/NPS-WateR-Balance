@@ -2,7 +2,6 @@
 # This script contains code for running and calibrating the water balance model
 # across multiple watersheds without additional user-provided input. 
 #
-# TEST
 # ---------------------------------------------------------------------
 
 ### Load libraries and function files ###
@@ -13,8 +12,8 @@ setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setw
 #######################################################################
 #######################################################################
 ### WATERSHED NAMES AND USGS GAGE NUMBERS ###
-watershed_siteid <- c("Little River", "Cataloochee")
-watershed_gageid <- c("03497300", "03460000")
+watershed_siteid <- c("Redwood Creek", "Wet Beaver Creek")
+watershed_gageid <- c("11460151", "09505200")
 watershed_foldername <- c('optim', 'optim')
 num_watersheds <- length(watershed_siteid)
 
@@ -40,9 +39,8 @@ point_location = FALSE
 percent_skill_cutoff = 0.1 
 
 ### Define time period for historical analysis ###
-# GridMET begins in 1970, Daymet begins in 1980 
-startY = 1979; startM = 01; startD = 01 
-endY = 2023; endM = 12; endD = 31
+startY = 2000; startM = 01; startD = 01 
+endY = 2024; endM = 12; endD = 31
 if(delayStart){ cutoffYear = startY+11 }else{cutoffYear = startY} 
 
 ### Model names for future streamflow ###
@@ -82,8 +80,8 @@ for(i in 1:num_watersheds){
   # Set paths
   if(!dir.exists(here('Data', SiteID_FileName))) {dir.create(here('Data', SiteID_FileName))}; dataPath <- here('Data', SiteID_FileName)
   if(!dir.exists(here('Output', SiteID_FileName))) {dir.create(here('Output', SiteID_FileName))}
-  if(!dir.exists(here('Output', SiteID_FileName, 'Streamflow'))) {dir.create(here('Output', SiteID_FileName, 'Streamflow'))}
-  if(!dir.exists(here('Output', SiteID_FileName, 'Streamflow', FolderName))) {dir.create(here('Output', SiteID_FileName, 'Streamflow', FolderName))}; outLocationPath = here('Output', SiteID_FileName, 'Streamflow', FolderName)
+  if(!dir.exists(here('Output', SiteID_FileName, 'WaterBalance'))) {dir.create(here('Output', SiteID_FileName, 'WaterBalance'))}
+  if(!dir.exists(here('Output', SiteID_FileName, 'WaterBalance', FolderName))) {dir.create(here('Output', SiteID_FileName,'WaterBalance', FolderName))}; outLocationPath = here('Output', SiteID_FileName, 'WaterBalance', FolderName)
   
   # Get watershed area and coordinates
   coords <- get_coords(SiteID_FileName, GageSiteID); lat <- coords$lat; lon <- coords$lon; elev <- coords$elev; aoi <- coords$geometry
@@ -106,10 +104,6 @@ for(i in 1:num_watersheds){
   #######################################################################
   ### Get data ###
   
-  # USGS gage data
-  gage_data <- get_gage_data(GageSiteID, incompleteMonths, fillLeapDays, dataPath)
-  meas_flow_daily <- gage_data$meas_flow_daily; meas_flow_mon <- gage_data$meas_flow_mon
-  
   # Historical meteorological data
   if(GridMET) {
     if(point_location){DailyClimData <- get_gridmet_point(SiteID_FileName, startY, endY, lat, lon, dataPath,
@@ -122,11 +116,11 @@ for(i in 1:num_watersheds){
   }
   
   # OpenET data
-  MonthlyET <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', 'ET', dataPath)
-  DailyET <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', 'ET', dataPath)
+  MonthlyET <- get_et_point(lat, lon, startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', 'ET', dataPath)
+  DailyET <- get_et_point(lat, lon, startY, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', 'ET', dataPath)
   
-  MonthlyETo <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', 'ETo', dataPath)
-  DailyETo <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', 'ETo', dataPath)
+  MonthlyETo <- get_et_point(lat, lon, startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', 'ETo', dataPath)
+  DailyETo <- get_et_point(lat, lon, startY, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', 'ETo', dataPath)
   
   
   #######################################################################
@@ -144,7 +138,7 @@ for(i in 1:num_watersheds){
   # Analysis
   
   # Model accuracy
-  source('WB/WB_Model_Accuracy.R')
+  source('WaterBalance/WB_Model_Accuracy.R')
   
   # Future streamflow projections
   if(future_analysis) source("WaterBalance//WB_Future_Analysis.R")

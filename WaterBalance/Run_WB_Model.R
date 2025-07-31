@@ -130,11 +130,11 @@ if(GridMET) {
 #######################################################################
 ### Scrape and clean openET data ###
 
-MonthlyET <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', 'ET', dataPath)
-DailyET <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', 'ET', dataPath)
+MonthlyET <- get_et_point(lat, lon, startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', 'ET', dataPath)
+DailyET <- get_et_point(lat, lon, startY, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', 'ET', dataPath)
 
-MonthlyETo <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', 'ETo', dataPath)
-DailyETo <- get_et_point(startY, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', 'ETo', dataPath)
+MonthlyETo <- get_et_point(lat, lon, startY, startM, startD, endY, endM, endD, SiteID_FileName, 'monthly', 'ETo', dataPath)
+DailyETo <- get_et_point(lat, lon, startY, startM, startD, endY, endM, endD, SiteID_FileName, 'daily', 'ETo', dataPath)
 
 
 

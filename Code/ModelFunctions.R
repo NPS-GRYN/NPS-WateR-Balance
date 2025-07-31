@@ -2,15 +2,7 @@
 # This script includes functions that support the calibration and running of the Water Balance
 # and IHACRES flow models.
 # 
-# EDITS IN PROGRESS
-# improve documentation + code readability
 # ---------------------------------------------------------------------
-
-# Theme for plots
-windowsFonts("Frutiger LT Std 55 Roman" = windowsFont("Frutiger LT Std 55 Roman"))
-nps_theme <- function(base_size = 20, base_family="Frutiger LT Std 55 Roman") {
-  theme_bw(base_size = base_size, base_family = "Frutiger LT Std 55 Roman") %+replace%
-    theme(axis.text.x = element_text(family="Frutiger LT Std 55 Roman", size = base_size * 0.8), complete = TRUE)}
 
 
 # Check validity of date vector
@@ -262,8 +254,8 @@ WB_Optim_ET = function(parms, Soil.Init, Snowpack.Init, T.Base, PETMethod, Daily
   MeasMod<- MeasMod[complete.cases(MeasMod),]
   
   # plot
-  plot <- ggplot(data=MeasMod) + geom_line(aes(x=date, y=Meas), color='black') + geom_line(aes(x=date, y=Mod), color='red') + labs(title=optimization_var)
-  print(plot)
+  #plot <- ggplot(data=MeasMod) + geom_line(aes(x=date, y=Meas), color='black') + geom_line(aes(x=date, y=Mod), color='red') + labs(title=optimization_var)
+  #print(plot)
   
   # calculate monthly NSE
   x <- MeasMod$Mod; y<- MeasMod$Meas
@@ -323,29 +315,4 @@ IHACRES_optim <- function(parms, q0, s0, v0, DailyWB, meas_flow_daily_xts, cutof
 } 
 
 
-
-# Plot trends in streamflow data
-# Only works for data at annual scale, ordered by water year
-# Args:
-# Returns:
-plot_trends <- function(date, value, title, y_label, change_line){
-  meas_sens <- sens.slope(value[!is.na(value)])
-  meas_mk <- MannKendall(value)
-  if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', meas_mk$sl, meas_sens$estimates)
-  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', meas_mk$sl, meas_sens$estimates)}
-  pett_test <- pett(value[!is.na(value)])
-  if(make_plots){
-    plot_meas <- ggplot(data.frame(date, value), aes(x = date, y = value)) + geom_line(aes(color = 'Measured', linetype='Measured'), na.rm=TRUE, linewidth=1) +
-      geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend', linetype='Trend')) +
-      labs(x = "Water Year", y = y_label, title = title, color='', linetype='') +
-      scale_color_manual(values = c("Measured" = "black", "Trend" = "red", 'Change Point'='red')) +
-      scale_linetype_manual(values = c("Measured" = "solid", "Trend" = "solid", "Change Point" = "dashed")) +
-      annotate("text", x = max(date), y = max(value, na.rm=TRUE), label = label, color = "black", hjust = 1, vjust = 1) + 
-      nps_theme() + theme(legend.position = 'bottom')
-    if(change_line){
-      plot_meas <- plot_meas + geom_vline(aes(xintercept=as.numeric(date[pett_test$change.point]), color='Change Point', linetype='Change Point'), linewidth=1)
-    }
-    print(plot_meas)
-  }
-}
 

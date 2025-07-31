@@ -8,7 +8,7 @@
 
 
 ### Create file for results ###
-results <- data.frame(SiteID = SiteID, start = startDate, end = endDate, PETMethod = PETMethod, optimization = optimization,
+results <- data.frame(SiteID = SiteID, PETMethod = PETMethod, optimization = optimization,
                       GridMET = GridMET, lon = lon, lat = lat,
                       startY = startY, startM = startM, startD = startD, endY = endY, endM = endM, endD = endD,
                       incompleteMonths = incompleteMonths, optimization_var = optimization_var)

@@ -157,11 +157,11 @@ for(i in 1:num_watersheds){
   # Analysis
 
   # Model accuracy
-  #source('Streamflow//Streamflow_Model_Accuracy.R')
+  source('Streamflow//Streamflow_Model_Accuracy.R')
   
   # Historical streamflow analysis
   if(historical_analysis){
-  #  source('Streamflow//Streamflow_Historical_Analysis.R')
+    source('Streamflow//Streamflow_Historical_Analysis.R')
   }
   
   # Future streamflow projections

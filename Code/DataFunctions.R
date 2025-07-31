@@ -4,8 +4,7 @@
 #
 # EDITS IN PROGRESS
 # area averaged functions for: gridded WB data from Mike Tercek's website, openET
-# check daymet and maca area averaged functions
-# finish documentation
+# check accuracy of maca, gridmet, and daymet outputs
 # ---------------------------------------------------------------------
 
 
@@ -15,7 +14,8 @@ if(!lib_install){
   library(lubridate); library(hydroGOF); library(stringr); library(terra); library(glue); library(tidyverse); library(RColorBrewer)
   library(climateR); library(EGRET); library(daymetr); library(here); library(ggrepel); library(gridExtra); library(Kendall)
   library(httr); library(jsonlite); library(sf); library(grid); library(GA); library(GGally); library(data.table); library(plotly)
-  library(tseries); library(dgof); library(wql); library(trend); library(parallel); library(purrr); library(elevatr); library(ggalt)
+  library(tseries); library(dgof); library(wql); library(trend); library(parallel); library(purrr); library(elevatr); library(ggalt);
+  library(dataRetrieval); library(geojsonsf)
   lib_install <- TRUE
 }
 
@@ -27,6 +27,14 @@ api_key = 'ZZjI9EAHEFsVhFf8WVgBD2J6ks14IbJZJgHYR1iBPO82EcYO2XxeDJAcwAN9'
 if(!dir.exists(here('Data'))) {dir.create(here('Data'))}
 if(!dir.exists(here('Output'))) {dir.create(here('Output'))}
 
+
+# Theme for plots
+windowsFonts("Frutiger LT Std 55 Roman" = windowsFont("Frutiger LT Std 55 Roman"))
+nps_theme <- function(base_size = 20, base_family="Frutiger LT Std 55 Roman") {
+  theme_bw(base_size = base_size, base_family = "Frutiger LT Std 55 Roman") %+replace%
+    theme(axis.text.x = element_text(family="Frutiger LT Std 55 Roman", size = base_size * 0.8), complete = TRUE)}
+
+
 # Get latitude and longitude coordinates of watershed centroid using StreamStats database
 # Args:
 #   SiteID_FileName:
@@ -36,10 +44,10 @@ if(!dir.exists(here('Output'))) {dir.create(here('Output'))}
 get_coords <- function(SiteID_FileName, GageSiteID){
   if(!file.exists(here('Data', SiteID_FileName, 'downloaded_shapefile', 'Layers', 'globalwatershed.shp'))){
     # get lat/lon data for watershed
-    INFO <- readNWISInfo(siteNumber=GageSiteID, parameterCd = "", interactive=FALSE)
+    INFO <- read_waterdata_monitoring_location(monitoring_location_id=paste0('USGS-',GageSiteID))
     
     # produce workspace ID for given watershed
-    get_workspace = GET(paste0('https://streamstats.usgs.gov/streamstatsservices/watershed.geojson?rcode=',tail(strsplit(INFO$station_nm," ")[[1]],n=1),'&xlocation=',INFO$dec_long_va,"&ylocation=",INFO$dec_lat_va,"&crs=4326&includeparameters=true&includeflowtypes=false&includefeatures=true&simplify=true"))
+    get_workspace = GET(paste0('https://streamstats.usgs.gov/streamstatsservices/watershed.geojson?rcode=',tail(strsplit(INFO$monitoring_location_name," ")[[1]],n=1),'&xlocation=',st_coordinates(INFO$geometry)[1],"&ylocation=",st_coordinates(INFO$geometry)[2],"&crs=4326&includeparameters=true&includeflowtypes=false&includefeatures=true&simplify=true"))
     workspaceID <- fromJSON(content(get_workspace, as = "text", encoding = "UTF-8"))$workspaceID
     
     # use workspace ID to download shapefile
@@ -81,6 +89,7 @@ get_region <- function(lat, lon){
 
 
 # Scrape data from USGS stream gage and aggregate
+# EDIT - NWIS is being decommissioned
 # Args:
 #   GageSiteID
 #   incompleteMonths:
@@ -112,9 +121,9 @@ get_gage_data <- function(GageSiteID, incompleteMonths, fillLeapDays, dataPath){
     DailyStream <- DailyStream[!(format(DailyStream$date,"%m") == "02" & format(DailyStream$date, "%d") == "29"), , drop = FALSE]
   }
   
-  # Extract square mileage of the watershed from the EGRET package
-  obj = readNWISInfo(siteNumber = GageSiteID, parameterCd = "00060", interactive = FALSE)
-  sqmi <<- obj$drain_area_va
+  # Extract square mileage of the watershed
+  obj <- read_waterdata_monitoring_location(monitoring_location_id=paste0('USGS-',GageSiteID))
+  sqmi <<- obj$drainage_area
   
   # Aggregate gage discharge data daily and convert from cfs to mm 
   meas_flow_daily <- data.frame(date = DailyStream$date, MeasMM = DailyStream$CFS*28316847*86400/(2590000000000 * sqmi))
@@ -392,7 +401,7 @@ get_maca_point <- function(lat, lon, startY, endY, SiteID_FileName, gcm_list){
     # Pull data
     point <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
     future_climate_data <- getMACA(point, c('tasmin','tasmax','pr','rsds','vpd','vas','uas'), timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'), 
-                                   startDate = '2023-01-01', endDate = '2099-12-31')
+                                   startDate = paste0(startY, '-01-01'), endDate = paste0(endY-1,'-12-31'))
     
     # Clean and compile data
     precip<-NULL; tasmin<-NULL; tasmax<-NULL; rsds<-NULL; vpd<-NULL; vas<-NULL; uas<-NULL 
@@ -440,11 +449,11 @@ get_maca_area <- function(aoi, startY, endY, SiteID_FileName, gcm_list){
   if(!file.exists(here('Data', SiteID_FileName, paste('MACA', SiteID_FileName, startY, endY, 'area.csv', sep='_')))){
     # Pull data
     future_climate_data <- getMACA(aoi, c('pr','rsds','vpd','vas','uas'), timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'),
-                                   startDate = '2023-01-01', endDate = '2099-12-31')
+                                   startDate = paste0(startY,'-01-01'), endDate = paste0(endY-1,'-12-31'))
     future_climate_data_tasmin <- getMACA(aoi, 'tasmin', timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'),
-                                         startDate = '2023-01-01', endDate = '2099-12-31')
+                                         startDate = paste0(startY,'-01-01'), endDate = paste0(endY-1,'-12-31'))
     future_climate_data_tasmax <- getMACA(aoi, 'tasmax', timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'),
-                                          startDate = '2023-01-01', endDate = '2099-12-31')
+                                          startDate = paste0(startY,'-01-01'), endDate = paste0(endY-1,'-12-31'))
     future_climate_data$tasmin <- future_climate_data_tasmin$air_temperature; future_climate_data$tasmax <- future_climate_data_tasmax$air_temperature
     
     # Check all the data is the correct length and re-query if not
@@ -453,7 +462,7 @@ get_maca_area <- function(aoi, startY, endY, SiteID_FileName, gcm_list){
       while(nlyr(future_climate_data[[var]]) != 731224){
         print(var)
         new_future_climate_data <- getMACA(aoi, dict[[var]], timeRes='day', model=gcm_list, scenario=c('rcp45','rcp85'),
-                       startDate = '2023-01-01', endDate = '2099-12-31')
+                       startDate = paste0(startY,'-01-01'), endDate = paste0(endY-1,'-12-31'))
         if(var=='tasmax' | var=='tasmin'){
           future_climate_data[[var]] <- new_future_climate_data$air_temperature
         }
@@ -521,7 +530,7 @@ get_maca_hist_point <- function(lat, lon, startY, endY, SiteID_FileName, model_n
     point <- data.frame(lon = lon, lat = lat) %>% vect(geom = c("lon", "lat"), crs = "EPSG:4326")
     hist_climate_data <- getMACA(point, c('tasmin','tasmax','pr','rsds','vpd','vas','uas'), timeRes='day', 
                                    model=sapply(strsplit(model_names, "\\."), `[`, 1), scenario=sapply(strsplit(model_names, "\\."), `[`, 2), 
-                                   startDate = '1960-01-01', endDate = '2005-12-31')
+                                   startDate=paste0(startY,'-01-01'), endDate = paste0(endY,'-12-31'))
     
     hist_climate <- hist_climate_data %>% pivot_longer(cols = -date, names_to = "var_model", values_to = "value") %>%
       separate(var_model, into = c("variable", "projection", "ensemble", "scenario"),sep = "_") %>% 
@@ -551,11 +560,11 @@ get_maca_hist_area <- function(aoi, startY, endY, SiteID_FileName, model_names){
     # Pull data
     hist_climate_data <- getMACA(aoi, c('pr','rsds','vpd','vas','uas'), timeRes='day', 
                                  model=sapply(strsplit(model_names, "\\."), `[`, 1), scenario=sapply(strsplit(model_names, "\\."), `[`, 2), 
-                                 startDate = '1960-01-01', endDate = '2005-12-31')
+                                 startDate = paste0(startY,'-01-01'), endDate = paste0(endY,'-12-31'))
     hist_climate_tasmax <- getMACA(aoi, 'tasmax', timeRes='day', model=sapply(strsplit(model_names, "\\."), `[`, 1), scenario=sapply(strsplit(model_names, "\\."), `[`, 2), 
-                                   startDate = '1960-01-01', endDate = '2005-12-31')
+                                   startDate = paste0(startY,'-01-01'), endDate = paste0(endY,'-12-31'))
     hist_climate_tasmin <- getMACA(aoi, 'tasmin', timeRes='day', model=sapply(strsplit(model_names, "\\."), `[`, 1), scenario=sapply(strsplit(model_names, "\\."), `[`, 2), 
-                                   startDate = '1960-01-01', endDate = '2005-12-31')
+                                   startDate = paste0(startY,'-01-01'), endDate = paste0(endY,'-12-31'))
     hist_climate_data$tasmax <- hist_climate_tasmax$air_temperature; hist_climate_data$tasmin <- hist_climate_tasmin$air_temperature
   
     # Combine and clean
@@ -621,7 +630,6 @@ get_spatial_means_future <- function(rast) {
 # NOTES: 
 # Mike Tercek's website is not consistently up and running so this will likely not work
 # "agdd", fix this - return when agdd is back on the website; make sure to put agdd BEFORE AET - will mess up code if agdd is last
-# MODIFIED from Janelle/Connor code
 get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
   # Return file if it exists
   if(file.exists(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))){
@@ -717,11 +725,11 @@ get_conus_wb_direct <- function(SiteID_FileName, dataPath, filename){
 
 # Pull OpenET data for a single point
 # can be ETo or measured ET (AET)
-get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileName, interval, var, dataPath){
+get_et_point <- function(lat, lon, startY, startM, startD, endY, endM, endD, siteID_FileName, interval, var, dataPath){
   # check start year for daily data
   if(interval=='daily' & startY < 2016){startY <- 2016}
   
-  if(!file.exists(here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, sep = "_" ), '.csv')))){
+  if(!file.exists(here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, "point", sep = "_" ), '.csv')))){
     header <- add_headers(accept = 'application/json', Authorization = api_key, content_type = 'application/json')
     
     # Get data from OpenET website
@@ -734,19 +742,25 @@ get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileNa
     # Check if request was successful and retry with different date range if not
     while(response$status_code != 200 & startY != endY){
         startY <- startY+1
-        args$date_range <- c(paste(startY, sprintf("%02d", startM), sprintf("%02d", startD), sep='-'), paste(endY, sprintf("%02d", endM), sprintf("%02d", endD), sep='-'))
-        response <- POST(url = "https://openet-api.org/raster/timeseries/point", header, body = args, encode = "json")
+        if(!file.exists(here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, "point", sep = "_" ), '.csv')))){
+          args$date_range <- c(paste(startY, sprintf("%02d", startM), sprintf("%02d", startD), sep='-'), paste(endY, sprintf("%02d", endM), sprintf("%02d", endD), sep='-'))
+          response <- POST(url = "https://openet-api.org/raster/timeseries/point", header, body = args, encode = "json")
+        } else{
+          ET <- read.csv(here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, "point", sep = "_" ), '.csv')))
+          ET$date <- as.Date(ET$date)
+          return(ET)
+        }
     }
     if(response$status_code == 200){
       ET <- data.frame(fromJSON(content(response, as = "text", encoding = "UTF-8")))
       colnames(ET) <- c('date', 'Meas ET')
       ET$date <- as.Date(ET$date)
-      write.csv(ET, here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, sep = "_" ), '.csv')), row.names=FALSE)
+      write.csv(ET, here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, "point", sep = "_" ), '.csv')), row.names=FALSE)
     } else{
       print(paste('No', interval, var, 'OpenET data for that region or time period. Optimization cannot occur.')); stop()
     }
   } else {
-    ET <- read.csv(here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, sep = "_" ), '.csv')))
+    ET <- read.csv(here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, "point", sep = "_" ), '.csv')))
     ET$date <- as.Date(ET$date)
   }
   return(ET)
@@ -754,7 +768,56 @@ get_et_point <- function(startY, startM, startD, endY, endM, endD, siteID_FileNa
 
 
 
-# Function to calculate pseudo R-squared
+# Pull OpenET data for an area average
+# can be ETo or measured ET (AET)
+get_et_area <- function(aoi, startY, startM, startD, endY, endM, endD, siteID_FileName, interval, var, dataPath){
+  # check start year for daily data
+  if(interval=='daily' & startY < 2016){startY <- 2016}
+  
+  # get coordinates of shapefile
+  aoi_geom <- sf_geojson(st_transform(aoi, 4326)[1, , drop = FALSE])
+  
+  if(!file.exists(here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, "area", sep = "_" ), '.csv')))){
+    header <- add_headers(accept = 'application/json', Authorization = api_key, content_type = 'application/json')
+    
+    # Get data from OpenET website
+    args <- list(date_range = list(paste(startY, sprintf("%02d", startM), sprintf("%02d", startD), sep='-'),
+                                paste(endY, sprintf("%02d", endM), sprintf("%02d", endD), sep='-')),
+                 interval = interval, geometry = aoi_geom, model = "Ensemble", variable = var, 
+                 reference_et = "gridMET", units = "mm", file_format = "JSON")
+    response <- POST(url = "https://openet-api.org/raster/timeseries/polygon", header, body = args, encode = "json")
+    
+    # Check if request was successful and retry with different date range if not
+    while(response$status_code != 200 & startY != endY){
+      startY <- startY+1
+      if(!file.exists(here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, "area", sep = "_" ), '.csv')))){
+        args$date_range <- c(paste(startY, sprintf("%02d", startM), sprintf("%02d", startD), sep='-'), paste(endY, sprintf("%02d", endM), sprintf("%02d", endD), sep='-'))
+        response <- POST(url = "https://openet-api.org/raster/timeseries/polygon", header, body = args, encode = "json")
+      } else{
+        ET <- read.csv(here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, "area", sep = "_" ), '.csv')))
+        ET$date <- as.Date(ET$date)
+        return(ET)
+      }
+    }
+    if(response$status_code == 200){
+      ET <- data.frame(fromJSON(content(response, as = "text", encoding = "UTF-8")))
+      colnames(ET) <- c('date', 'Meas ET')
+      ET$date <- as.Date(ET$date)
+      write.csv(ET, here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, "area", sep = "_" ), '.csv')), row.names=FALSE)
+    } else{
+      print(paste('No', interval, var, 'OpenET data for that region or time period. Optimization cannot occur.')); stop()
+    }
+  } else {
+    ET <- read.csv(here('Data', SiteID_FileName, paste0(paste("OpenET", var, interval, SiteID_FileName, startY, endY, "area", sep = "_" ), '.csv')))
+    ET$date <- as.Date(ET$date)
+  }
+  return(ET)
+}
+  
+
+
+
+# Calculate pseudo R-squared
 calculate_pseudo_r2 <- function(model, newdata, tau){
   preds <- predict(model, newdata = newdata)
   tau_preds <- preds[, which(model$tau == tau)]
@@ -767,7 +830,7 @@ calculate_pseudo_r2 <- function(model, newdata, tau){
 
 
 
-# Function to return water year
+# Calculate water year
 get_water_year <- function(date){
   if(month(date) < 10){
     return(year(date))
@@ -794,9 +857,8 @@ ID.redundant.gcm <- function(PCA){
 
 # Select future climate means
 # make this function better and not just storage for other code
-# EDIT
 select_climate_futures <- function(color_names){
-  #if(!file.exists(here('Data', SiteID_FileName, paste0(paste('Future_TP_Means',SiteID_FileName, sep='_'), ".csv")))){
+  if(!file.exists(here('Data', SiteID_FileName, paste0(paste('Future_TP_Means',SiteID_FileName, sep='_'), ".csv")))){
     ### Pull meteorological data ###
     # future
     if(point_location){
@@ -905,14 +967,14 @@ select_climate_futures <- function(color_names){
     
     # Save future means as file
     write.csv(future_means, here('Data', SiteID_FileName, paste0(paste('Future_TP_Means',SiteID_FileName, sep='_'), ".csv")), row.names=FALSE)
-  #} else{
-  #  future_means <- read.csv(here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')))
-  #}
+  } else{
+    future_means <- read.csv(here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')))
+  }
   return(future_means)
 }
 
 
-
+# Calculate dataframe of delta change for climate futures and generate scatterplot
 plot_climate_futures <- function(hist, future){
   # Future aggregation
   future_ann <- as.data.frame(future %>% group_by(projection, year(date)) %>%
@@ -954,3 +1016,30 @@ plot_climate_futures <- function(hist, future){
 
   return(future_means)
 }
+
+
+
+# Plot trends in streamflow data
+# Only works for data at annual scale, ordered by water year
+plot_trends <- function(date, value, title, y_label, change_line){
+  meas_sens <- sens.slope(value[!is.na(value)])
+  meas_mk <- MannKendall(value)
+  if(meas_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', meas_mk$sl, meas_sens$estimates)
+  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', meas_mk$sl, meas_sens$estimates)}
+  pett_test <- pett(value[!is.na(value)])
+  if(make_plots){
+    plot_meas <- ggplot(data.frame(date, value), aes(x = date, y = value)) + geom_line(aes(color = 'Measured', linetype='Measured'), na.rm=TRUE, linewidth=1) +
+      geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend', linetype='Trend')) +
+      labs(x = "Water Year", y = y_label, title = title, color='', linetype='') +
+      scale_color_manual(values = c("Measured" = "black", "Trend" = "red", 'Change Point'='red')) +
+      scale_linetype_manual(values = c("Measured" = "solid", "Trend" = "solid", "Change Point" = "dashed")) +
+      annotate("text", x = max(date), y = max(value, na.rm=TRUE), label = label, color = "black", hjust = 1, vjust = 1) + 
+      nps_theme() + theme(legend.position = 'bottom')
+    if(change_line){
+      plot_meas <- plot_meas + geom_vline(aes(xintercept=as.numeric(date[pett_test$change.point]), color='Change Point', linetype='Change Point'), linewidth=1)
+    }
+    print(plot_meas)
+  }
+}
+
+

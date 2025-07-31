@@ -5,14 +5,11 @@
 # This script is not intended to be run independently; it must be called from 
 # the main Run_Streamflow_Model.R script.
 #
-# EDITS IN PROGRESS:
-# make the workflow make sense!!
-#look into optim(): increment jrange in whole numbers ?
 # ---------------------------------------------------------------------
 
 
 # Create dataframe to store optimization results
-results <- data.frame(SiteID = SiteID, start = startDate, end = endDate, PETMethod = PETMethod, optimization = optimization,
+results <- data.frame(SiteID = SiteID, PETMethod = PETMethod, optimization = optimization,
                       GridMET = GridMET, lon = lon, lat = lat,
                       startY = startY, startM = startM, startD = startD, endY = endY, endM = endM, endD = endD,
                       cutoffYear = cutoffYear, NonZeroDrainInitCoeff = NonZeroDrainInitCoeff, incompleteMonths = incompleteMonths)
@@ -96,7 +93,7 @@ if(make_plots){
 
 #Re run the Water Balance model as an input for the second optimization with the optimized water balance variables
 DailyWB<- WB(DailyClimData, gw_add, vfm, jrange, hock, hockros, dro, mondro, aspect, slope,
-             shade.coeff, jtemp,SWC.Max, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon)
+             shade.coeff, jtemp,SWC.Max, 1, 1, 0, Soil.Init, Snowpack.Init, T.Base, PETMethod,lat, lon, "")
 
 # Define variables for optimization
 IHACRES_lower <- c(l_qa=0, l_qb=0, l_sa=0, l_sb=0, l_va=0)
