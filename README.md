@@ -9,7 +9,7 @@ The Data folder contains two files with data necessary for the code to run; when
 
 ### Streamflow
 The Streamflow folder includes scripts to run a model of streamflow, either using user-provided parameters or calibration to a USGS stream gage, for a user-specified geographic region. 
-<br><br>`Run_Streamflow_Model.R`: This is the primary script in the Streamflow folder. it has four parts: defining model parameters and setting initial values of variables, pulling historical USGS streamflow observations and meteorological forcing data, running the model (including optimization, if desired), and analyzing model results for historical and future time periods.  
+<br><br>`Run_Streamflow_Model.R`: This is the primary script in the Streamflow folder. it has four parts: defining model parameters and setting initial values of variables, pulling historical USGS streamflow observations and meteorological forcing data, running the model (including optimization, if desired), and analyzing model results for historical and future time periods. Each of these parts are carried out by sub-scripts called in the main script. For more details, please refer to the user guide.
 <br>`Streamflow_Historical_Analysis.R`: The Streamflow_Historical_Analysis.R script provides visualizations and preliminary analyses of historical measured streamflow trends based on USGS gage data. The script can be run independently or in conjunction with the Run_Streamflow_Model.R script. 
 
 ### Validation
