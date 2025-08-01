@@ -18,5 +18,5 @@ The Validation folder includes scripts and supporting files to validate whether 
 
 ### Water Balance
 The Water Balance folder includes scripts to run a water balance model using user-provided parameters, with an optional step of calibrating the model to OpenET estimates of AET.
-`Run_WB_Model.R`: This is the primary script in the Water Balance folder. It has four parts: defining model parameters and setting initial values of variables, pulling OpenET observations and meteorological forcing data, running the model (including optimization, if desired), and analyzing model results for historical and future time periods. Each of these parts are carried out by sub-scripts called in the main script. For more details, please refer to the user guide.
+<br><br>`Run_WB_Model.R`: This is the primary script in the Water Balance folder. It has four parts: defining model parameters and setting initial values of variables, pulling OpenET observations and meteorological forcing data, running the model (including optimization, if desired), and analyzing model results for historical and future time periods. Each of these parts are carried out by sub-scripts called in the main script. For more details, please refer to the user guide.
 
