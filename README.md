@@ -9,12 +9,12 @@ The Data folder contains two files with data necessary for the code to run; when
 
 ### Streamflow
 The Streamflow folder includes scripts to run a model of streamflow, either using user-provided parameters or calibration to a USGS stream gage, for a user-specified geographic region. 
-`Run_Streamflow_Model.R`: This is the primary script in the Streamflow folder. it has four parts: defining model parameters and setting initial values of variables, pulling historical USGS streamflow observations and meteorological forcing data, running the model (including optimization, if desired), and analyzing model results for historical and future time periods.  
-`Streamflow_Historical_Analysis.R`: The Streamflow_Historical_Analysis.R script provides visualizations and preliminary analyses of historical measured streamflow trends based on USGS gage data. The script can be run independently or in conjunction with the Run_Streamflow_Model.R script. 
+<br><br>`Run_Streamflow_Model.R`: This is the primary script in the Streamflow folder. it has four parts: defining model parameters and setting initial values of variables, pulling historical USGS streamflow observations and meteorological forcing data, running the model (including optimization, if desired), and analyzing model results for historical and future time periods.  
+<br>`Streamflow_Historical_Analysis.R`: The Streamflow_Historical_Analysis.R script provides visualizations and preliminary analyses of historical measured streamflow trends based on USGS gage data. The script can be run independently or in conjunction with the Run_Streamflow_Model.R script. 
 
 ### Validation
 The Validation folder includes scripts and supporting files to validate whether the performance of the R model matches other versions of the NPS water balance model that have been developed, including an Excel version and a Python version. 
-`FrogRock_crosscheck.R`: This script allows users to run the water balance model and confirm that its output matches the original version of the model in Excel and a more recently developed version of the model in Python, using the test site of Frog Rock in Yellowstone National Park. 
+<br><br>`FrogRock_crosscheck.R`: This script allows users to run the water balance model and confirm that its output matches the original version of the model in Excel and a more recently developed version of the model in Python, using the test site of Frog Rock in Yellowstone National Park. 
 
 ### Water Balance
 The Water Balance folder includes scripts to run a water balance model using user-provided parameters, with an optional step of calibrating the model to OpenET estimates of AET.
