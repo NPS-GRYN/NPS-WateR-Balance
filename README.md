@@ -1,5 +1,5 @@
 # NPS WateR Balance Model
-This repository houses the R version of NPS Water Balance model and the coupled NPS Water Balance - IHACRES model of streamflow. A comprehensive user guide can be found `[here](https://drive.google.com/file/d/18XgJSvIbnpL7oj97bJhvrwmZNjM4ErDY/view?usp=sharing)`. Below is a brief description of each folder in this repository. The primary scripts that run the model are also described (sub-scripts and supporting scripts are not included in this description).  
+This repository houses the R version of NPS Water Balance model and the coupled NPS Water Balance - IHACRES model of streamflow. A comprehensive user guide can be found [here](https://drive.google.com/file/d/18XgJSvIbnpL7oj97bJhvrwmZNjM4ErDY/view?usp=sharing). Below is a brief description of each folder in this repository. The primary scripts that run the model are also described (sub-scripts and supporting scripts are not included in this description).  
 
 ### Code
 The Code folder contains supporting scripts that define functions used by both the water balance and IHACRES streamflow models, including functions to pull and process data, run the model, and calibrate the model.
