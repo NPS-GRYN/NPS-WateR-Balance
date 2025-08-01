@@ -24,21 +24,29 @@ num_watersheds <- length(watershed_siteid)
 # To experiement with the effects of parameter changes on calibration, use
 # the Streamflow_Multi_Parameter.R script.
 
-PETMethod = "Oudin" 
+# General variables
 optimization = FALSE 
-delayStart = FALSE 
-NonZeroDrainInitCoeff = FALSE
-incompleteMonths = FALSE 
-GridMET = TRUE
-fillLeapDays = TRUE 
 historical_analysis = TRUE
 future_analysis = TRUE
-calcFutureWB = TRUE  
-userSetJTemp = FALSE 
+calcFutureWB = TRUE 
 make_plots = TRUE 
 point_location = FALSE
-flow_components = 3
 percent_skill_cutoff = 0.1 
+
+# Meteorological data variables
+incompleteMonths = FALSE 
+GridMET = TRUE
+fillLeapDays = TRUE
+
+# Water balance variables
+PETMethod = "Oudin"
+userSetJTemp = FALSE 
+
+# Streamflow variables
+delayStart = FALSE 
+NonZeroDrainInitCoeff = FALSE
+flow_components = 3
+
 
 ### Define time period for historical analysis ###
 # GridMET begins in 1970, Daymet begins in 1980 

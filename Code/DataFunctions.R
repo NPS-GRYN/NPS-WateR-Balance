@@ -20,7 +20,8 @@ if(!lib_install){
 }
 
 # Define API key
-api_key = 'ZZjI9EAHEFsVhFf8WVgBD2J6ks14IbJZJgHYR1iBPO82EcYO2XxeDJAcwAN9'
+# add your API key here: https://etdata.org/api-info/
+api_key = ''
 
 
 # Create folders for data and output
@@ -36,11 +37,6 @@ nps_theme <- function(base_size = 20, base_family="Frutiger LT Std 55 Roman") {
 
 
 # Get latitude and longitude coordinates of watershed centroid using StreamStats database
-# Args:
-#   SiteID_FileName:
-#   GageSiteID:
-# Returns:
-#   Latitude and longitude coordiantes of watershed centroid
 get_coords <- function(SiteID_FileName, GageSiteID){
   if(!file.exists(here('Data', SiteID_FileName, 'downloaded_shapefile', 'Layers', 'globalwatershed.shp'))){
     # get lat/lon data for watershed
@@ -88,14 +84,8 @@ get_region <- function(lat, lon){
 
 
 
-# Scrape data from USGS stream gage and aggregate
-# EDIT - NWIS is being decommissioned
-# Args:
-#   GageSiteID
-#   incompleteMonths:
-#   dataPath
-# Returns:
-#   xts object of daily streamflow measurements and dataframe of monthly streamflow measurements
+# Scrape daily streamflow data from USGS stream gage and aggregate
+# EDIT - NWIS is being decommissioned, function might need to be updated
 get_gage_data <- function(GageSiteID, incompleteMonths, fillLeapDays, dataPath){
   if(!file.exists(file.path(dataPath, paste0(paste("USGS_Gage",GageSiteID, sep = "_"), ".csv")))){
     # Scrape data
@@ -154,10 +144,7 @@ get_gage_data <- function(GageSiteID, incompleteMonths, fillLeapDays, dataPath){
 
 
 
-# Scrape GridMET meteorological data and clean for point location
-# Args:
-# Returns: 
-#   Dataframe with meteorological data at daily time scale
+# Scrape daily GridMET meteorological data and clean for point location
 get_gridmet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath,
                              tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope){
   # Identify dates
@@ -198,10 +185,8 @@ get_gridmet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath,
 
 
 
-# Scrape GridMET meteorological data and clean
+# Scrape daily GridMET meteorological data and clean
 # check accuracy before using!
-# Returns: 
-#   Dataframe with meteorological data at daily time scale
 get_gridmet_area <- function(SiteID_FileName, startY, endY, aoi, dataPath,
                               tmmn_bias, tmmn_slope, tmmx_bias, tmmx_slope, p_bias, p_slope){
   # Identify dates
@@ -256,10 +241,8 @@ get_gridmet_area <- function(SiteID_FileName, startY, endY, aoi, dataPath,
 
 
 
-# Scrape Daymet meteorological data for point and clean
+# Scrape daily Daymet meteorological data for point and clean
 # check accuracy before using!
-# Returns:
-#   Dataframe with Daymet meteorological data from point location at daily time scale
 get_daymet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath){
   # Identify dates
   if(startY < 1980) startY <- 1980; if(endY > 2024) endY <- 2024
@@ -316,10 +299,8 @@ get_daymet_point <- function(SiteID_FileName, startY, endY, lat, lon, dataPath){
 
 
 
-# Scrape Daymet meteorological data for area and clean
+# Scrape daily Daymet meteorological data for area and clean
 # check accuracy before using!
-# Returns:
-#   Dataframe with Daymet meteorological data from watershed average at daily time scale
 get_daymet_area <-  function(SiteID_FileName, startY, endY, aoi, dataPath){
   # Identify dates
   if(startY < 1980) startY <- 1980; if(endY > 2024) endY <- 2024
@@ -616,15 +597,8 @@ get_spatial_means_future <- function(rast) {
 # Pull gridded water balance data for a single point from CONUS model
 # More details about the gridded product can be found:
 # https://www.yellowstoneecology.com/research/Gridded_Water_Balance_Model_Version_2_User_Manual.pdf
-# Args:
-#   SiteID_FileName
-#   lat, lon: Latitude and longitude of site, in degrees
-#   startY_future, endY_future: start and end years of future projection period
-# Returns:
-#   Gridded water balance data for CONUS, which is saved as a csv file
 # NOTES: 
 # Mike Tercek's website is not consistently up and running so this will likely not work
-# "agdd", fix this - return when agdd is back on the website; make sure to put agdd BEFORE AET - will mess up code if agdd is last
 get_conus_wb <- function(SiteID_FileName, lat, lon, startY_future, endY_future){
   # Return file if it exists
   if(file.exists(file.path(dataPath, paste("WB_conus",SiteID_FileName,"2023_2100.csv", sep = "_")))){
@@ -718,7 +692,7 @@ get_conus_wb_direct <- function(SiteID_FileName, dataPath, filename){
 
 
 
-# Pull OpenET data for a single point
+# Pull daily or monthly OpenET data for a single point
 # can be ETo or measured ET (AET)
 get_et_point <- function(lat, lon, startY, startM, startD, endY, endM, endD, siteID_FileName, interval, var, dataPath){
   # check start year for daily data
@@ -763,7 +737,7 @@ get_et_point <- function(lat, lon, startY, startM, startD, endY, endM, endD, sit
 
 
 
-# Pull OpenET data for an area average
+# Pull daily or monthly OpenET data for an area average
 # can be ETo or measured ET (AET)
 get_et_area <- function(aoi, startY, startM, startD, endY, endM, endD, siteID_FileName, interval, var, dataPath){
   # check start year for daily data
@@ -962,7 +936,7 @@ select_climate_futures <- function(color_names){
     # Save future means as file
     write.csv(future_means, here('Data', SiteID_FileName, paste0(paste('Future_TP_Means',SiteID_FileName, sep='_'), ".csv")), row.names=FALSE)
   } else{
-    future_means <- read.csv(here('Data',SiteID_FileName,paste('Future_TP_Means',SiteID_FileName, sep='_')))
+    future_means <- read.csv(here('Data',SiteID_FileName,paste0(paste('Future_TP_Means',SiteID_FileName, sep='_'), ".csv")))
   }
   return(future_means)
 }

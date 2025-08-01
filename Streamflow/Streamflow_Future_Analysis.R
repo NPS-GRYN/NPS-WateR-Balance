@@ -11,8 +11,6 @@
 
 #######################################################################
 ### GENERATE FUTURE WATER BALANCE MODELS ###
-gcm_list <- c('BNU-ESM', 'CCSM4', 'CNRM-CM5', 'CSIRO-Mk3-6-0', 'CanESM2','GFDL-ESM2G', 'HadGEM2-CC365', 
-              'IPSL-CM5A-LR', 'MIROC5', 'MIROC-ESM-CHEM','MRI-CGCM3', 'NorESM1-M', 'inmcm4')
 
 # Remove low skill models using list from Rupp et al. 2016
 low_skill_models = read.delim('./Data/GCM_skill_by_region.txt', header=TRUE) %>% 
@@ -73,7 +71,6 @@ if(calcFutureWB){
 
 ### Compare the two future water balance projections, just for fun ###
 # plot AET, deficit, adj runoff for a sample year and a sample model
-# edit if statement
 if(exists("future_wb_conus") & exists("future_wb_calc")){
   model_run = 'HadGEM2-CC365.rcp45'; yr = 2060
   if(make_plots){
@@ -112,34 +109,34 @@ if(calcFutureWB){
 }
 
 # Run IHACRES model for each future projection
-#if(!file.exists(paste(outLocationPathFuture,'Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_'))){
-gcms<-unique(future_wb$projection)
-futures <- NULL
-for (j in 1:length(gcms)){
-  # Subset one model
-  fut_ro <- subset(future_wb, projection == gcms[j]); print(gcms[j])
-  data <- data.frame(fut_ro$adj_runoff)
-  colnames(data) <- c("adj_runoff")
+if(!file.exists(paste(outLocationPathFuture,'Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_'))){
+  gcms<-unique(future_wb$projection)
+  futures <- NULL
+  for (j in 1:length(gcms)){
+    # Subset one model
+    fut_ro <- subset(future_wb, projection == gcms[j]); print(gcms[j])
+    data <- data.frame(fut_ro$adj_runoff)
+    colnames(data) <- c("adj_runoff")
+    
+    # Run IHACRES model
+    DailyDrainFuture <- Drain(data, q0, s0, v0, qa, qb, sa, sb, va, vb)
+    
+    # Save streamflow projection to futures dataframe
+    drainage_qsvt <- cbind(gcms[j], fut_ro$date, DailyDrainFuture)
+    colnames(drainage_qsvt)[] <- c("projection", "date", "adj_runoff", "quick", "slow", "veryslow", "total")
+    futures <-rbind(futures, drainage_qsvt)
+  }
   
-  # Run IHACRES model
-  DailyDrainFuture <- Drain(data, q0, s0, v0, qa, qb, sa, sb, va, vb)
+  # Extract GCM and RCP
+  futures$gcm <- sapply(X = strsplit(futures$projection, split=".rcp"), FUN = "[", 1) 
+  futures$rcp <- as.numeric(x = sapply(strsplit(futures$projection, split=".rcp"), FUN = "[", 2)) 
   
-  # Save streamflow projection to futures dataframe
-  drainage_qsvt <- cbind(gcms[j], fut_ro$date, DailyDrainFuture)
-  colnames(drainage_qsvt)[] <- c("projection", "date", "adj_runoff", "quick", "slow", "veryslow", "total")
-  futures <-rbind(futures, drainage_qsvt)
+  # Save future streamflow projections
+  write.csv(futures, here('Data',SiteID_FileName,paste('Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_')), row.names=FALSE)
+} else{
+  futures <- read.csv(here('Data',SiteID_FileName,paste('Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_')))
+  futures$date <- as.Date(futures$date)
 }
-
-# Extract GCM and RCP
-futures$gcm <- sapply(X = strsplit(futures$projection, split=".rcp"), FUN = "[", 1) 
-futures$rcp <- as.numeric(x = sapply(strsplit(futures$projection, split=".rcp"), FUN = "[", 2)) 
-
-# Save future streamflow projections
-write.csv(futures, here('Data',SiteID_FileName,paste('Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_')), row.names=FALSE)
-#} else{
-#  futures <- read.csv(here('Data',SiteID_FileName,paste('Future_Streamflow_Projections',SiteID_FileName, endY, "2100.csv", sep='_')))
-#  futures$date <- as.Date(futures$date)
-#}
 
 #######################################################################
 ### COMPILE FUTURE AND HISTORICAL PROJECTIONS ###
@@ -184,15 +181,18 @@ mean_daily_df <- daily_df %>% filter(projection!='Historical') %>% group_by(date
 #######################################################################
 ### SELECT DIVERGENT CLIMATE FUTURES ###
 #scenario_names <- c("Warm Wet", "Hot Wet", "Warm Dry", "Hot Dry")
-#color_names <- c("#12045C","#E10720","#9A9EE5","#F3D3CB")
 color_names <- c("#4E5BA6","#E10720","#B4B8F0","#E79C9C")
-#color_names <- c('#7570B3','#E69F00','#92A8D1','#D55E00')
 future_means <- select_climate_futures(color_names)
 
 
 ### Identify models in format for plotting ###
 model_names <- (future_means %>% filter(!is.na(pca)))$projection; scenario_names <- (future_means %>% filter(!is.na(pca)))$pca
 num_models <- length(model_names)
+
+# Reorder for prettier plotting
+order_index <- match(c("Warm Wet", "Hot Wet", "Warm Dry", "Hot Dry"), scenario_names)
+model_names <- model_names[order_index]
+scenario_names <- scenario_names[order_index]
 
 # identify warm wet/hot dry [1:2] or warm dry/hot wet [3:4] or all (comment out both lines)
 #model_names <- model_names[1:2]; scenario_names <- scenario_names[1:2]; color_names <- color_names[1:2]
@@ -386,15 +386,15 @@ if(make_plots){
   dev.off()
   
   # plot with selected climate futures
-  jpeg(file=paste0(outLocationPathFuture, "/Streamflow_Climate_Future.jpg"), width=1500, height=600)
+  jpeg(file=paste0(outLocationPathFuture, "/Streamflow_Climate_Future.jpg"), width=1000, height=400)
   plot <- ggplot(data=delta_plot) + 
     geom_point(data=delta_plot %>% filter(!(projection %in% model_names)), aes(x=delta_annual_mm,y=delta_daily_sd,color='Other')) +
-    geom_point(data=delta_plot %>% filter(projection %in% model_names), aes(x=delta_annual_mm,y=delta_daily_sd,color=projection)) + 
+    geom_point(data=delta_plot %>% filter(projection %in% model_names), aes(x=delta_annual_mm,y=delta_daily_sd,color=projection), size=3) + 
     geom_text_repel(data=delta_plot %>% filter(!(projection %in% model_names)), aes(x=delta_annual_mm,y=delta_daily_sd, label=projection), color = 'black', size=2, max.overlaps=Inf) +
     geom_text_repel(data=delta_plot %>% filter(projection %in% model_names), aes(x=delta_annual_mm,y=delta_daily_sd, label=projection, color=projection), size=4,  fontface = "bold", max.overlaps=Inf) + 
     geom_hline(data = sd_quantile, aes(yintercept = yintercept), color = "black") + geom_vline(data = annual_quantile, aes(xintercept = xintercept), color = "black") +
     #geom_hline(data = sd_zero, aes(yintercept = yintercept), color = "black") + geom_vline(data = annual_zero, aes(xintercept = xintercept), color = "black") +
-    facet_wrap(~factor(Period, levels = c('Early', 'Middle', 'Late'))) + labs(title=paste('Changes in streamflow at',SiteID), x='Change in annual magnitude [mm]', y='Change in daily standard deviation [mm]', color='RCP') + 
+    facet_wrap(~factor(Period, levels = c('Early', 'Middle', 'Late'))) + labs(title=paste('Changes in streamflow at',SiteID), x='Change in annual magnitude [mm]', y='Change in daily standard deviation [mm]', color='Future') + 
     scale_color_manual(values = c("Other" = "black", setNames(color_names, model_names)), labels=c("Other" = "black", setNames(scenario_names, model_names))) + nps_theme()
   print(plot)
   dev.off()
@@ -425,9 +425,11 @@ for (i in 1:length(model_names)){
                                 "181" = "April", "212" = "May", "243" = "June", "274" = "July", "305" = "August", "335" = "September")) +
     theme(axis.text.x = element_text(angle = 90))
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_MACA_Daily_Heatmap.jpg"), width=200*num_models, height=150*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_MACA_Daily_Heatmap.jpg"), width=200*num_models, height=150*num_models)
+  grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+  dev.off()
+}
 
 
 ### Heatmap - monthly 
@@ -452,9 +454,11 @@ for (i in 1:length(model_names)){
                                 "10" = "October", "11" = "November", "12" = "December")) +
     nps_theme() + theme(axis.text.x = element_text(angle = 90))
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_MACA_Monthly_Heatmap.jpg"), width=400*num_models, height=300*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_MACA_Monthly_Heatmap.jpg"), width=400*num_models, height=300*num_models)
+  grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+  dev.off()
+}
 
 
 #######################################################################
@@ -541,29 +545,36 @@ delta_plot <- (model_annual_df %>% filter(rcp!="Historical")) %>%
   mutate(delta_annual_mm=total-mean_total)
 
 # All models by RCP
-plot <- ggplot() + geom_boxplot(data=delta_plot, aes(x=projection, y=delta_annual_mm, fill=rcp)) + 
-  labs(title='Change in annual flow magnitude', y='Change in annual flow [mm]', x='Projection', fill='RCP') + 
-  facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c('45' = 'orange', '85' = 'red')) + 
-  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
-jpeg(file=paste0(outLocationPathFuture, "/", "Annual_Flow_Change_RCP.jpg"), width=1200, height=500)
-print(plot); dev.off()
+if(make_plots){
+  plot <- ggplot() + geom_boxplot(data=delta_plot, aes(x=projection, y=delta_annual_mm, fill=rcp)) + 
+    labs(title='Change in annual flow magnitude', y='Change in annual flow [mm]', x='Projection', fill='RCP') + 
+    facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c('45' = 'orange', '85' = 'red')) + 
+    nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  jpeg(file=paste0(outLocationPathFuture, "/", "Annual_Flow_Change_RCP.jpg"), width=1200, height=500)
+  print(plot); dev.off()
+}
 
 # All models by climate future
-plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_annual_mm, fill=projection)) + 
-  geom_boxplot(data=(delta_plot %>% filter(!projection %in% model_names)), aes(x=projection, y=delta_annual_mm, fill='Other')) + 
-  labs(title='Change in annual flow magnitude', y='Change in annual flow [mm]', x='Projection', fill='Future') + 
-  facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
-  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
-jpeg(file=paste0(outLocationPathFuture, "/", "Annual_Flow_Change.jpg"), width=1200, height=500)
-print(plot); dev.off()
+if(make_plots){
+  plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_annual_mm, fill=projection)) + 
+    geom_boxplot(data=(delta_plot %>% filter(!projection %in% model_names)), aes(x=projection, y=delta_annual_mm, fill='Other')) + 
+    labs(title='Change in annual flow magnitude', y='Change in annual flow [mm]', x='Projection', fill='Future') + 
+    facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+    nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  jpeg(file=paste0(outLocationPathFuture, "/", "Annual_Flow_Change.jpg"), width=1200, height=500)
+  print(plot); dev.off()
+}
+
 
 # Just climate futures
-plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_annual_mm, fill=projection)) + 
-  labs(title='Change in annual flow magnitude', y='Change in annual flow [mm]', x='Projection', fill='Future') + 
-  facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
-  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
-jpeg(file=paste0(outLocationPathFuture, "/", "Annual_Flow_Change_Futures.jpg"), width=1200, height=500)
-print(plot); dev.off()
+if(make_plots){
+  plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_annual_mm, fill=projection)) + 
+    labs(title='Change in annual flow magnitude', y='Change in annual flow [mm]', x='Projection', fill='Future') + 
+    facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+    nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  jpeg(file=paste0(outLocationPathFuture, "/", "Annual_Flow_Change_Futures.jpg"), width=1200, height=500)
+  print(plot); dev.off()
+}
 
 
 ### Change in daily streamflow standard deviation ###
@@ -571,31 +582,33 @@ delta_plot_sd <- (model_df %>% filter(rcp!="Historical")) %>% group_by(projectio
   left_join((model_df %>% filter(rcp=="Historical")) %>% group_by(gcm) %>% summarize(hist_sd=sd(total, na.rm=TRUE)), by = "gcm") %>% 
   mutate(delta_daily_sd=fut_sd-hist_sd)
 
-# All models by RCP
-plot <- ggplot() + geom_boxplot(data=delta_plot_sd, aes(x=projection, y=delta_daily_sd, fill=rcp)) + 
-  labs(title='Change in daily flow standard deviation', y='Change in standard deviation [mm]', x='Projection', fill='RCP') + 
-  facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c('45' = 'orange', '85' = 'red')) + 
-  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
-jpeg(file=paste0(outLocationPathFuture, "/", "SD_Change_RCP.jpg"), width=1200, height=500)
-print(plot); dev.off()
 
-# All models by climate future
-plot <- ggplot() + geom_boxplot(data=(delta_plot_sd %>% filter(projection %in% model_names)), aes(x=projection, y=delta_daily_sd, fill=projection)) + 
-  geom_boxplot(data=(delta_plot_sd %>% filter(!projection %in% model_names)), aes(x=projection, y=delta_daily_sd, fill='Other')) + 
-  labs(title='Change in daily flow standard deviation', y='Change in standard deviation [mm]', x='Projection', fill='Future') + 
-  facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
-  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
-jpeg(file=paste0(outLocationPathFuture, "/", "SD_Change.jpg"), width=1200, height=500)
-print(plot); dev.off()
-
-# Just climate futures
-plot <- ggplot() + geom_boxplot(data=(delta_plot_sd %>% filter(projection %in% model_names)), aes(x=projection, y=delta_daily_sd, fill=projection)) + 
-  labs(title='Change in daily flow standard deviation', y='Change in standard deviation [mm]', x='Projection', fill='Future') + 
-  facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
-  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
-jpeg(file=paste0(outLocationPathFuture, "/", "SD_Change_Futures.jpg"), width=1200, height=500)
-print(plot); dev.off()
-
+if(make_plots){
+  # All models by RCP
+  plot <- ggplot() + geom_boxplot(data=delta_plot_sd, aes(x=projection, y=delta_daily_sd, fill=rcp)) + 
+    labs(title='Change in daily flow standard deviation', y='Change in standard deviation [mm]', x='Projection', fill='RCP') + 
+    facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c('45' = 'orange', '85' = 'red')) + 
+    nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  jpeg(file=paste0(outLocationPathFuture, "/", "SD_Change_RCP.jpg"), width=1200, height=500)
+  print(plot); dev.off()
+  
+  # All models by climate future
+  plot <- ggplot() + geom_boxplot(data=(delta_plot_sd %>% filter(projection %in% model_names)), aes(x=projection, y=delta_daily_sd, fill=projection)) + 
+    geom_boxplot(data=(delta_plot_sd %>% filter(!projection %in% model_names)), aes(x=projection, y=delta_daily_sd, fill='Other')) + 
+    labs(title='Change in daily flow standard deviation', y='Change in standard deviation [mm]', x='Projection', fill='Future') + 
+    facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+    nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  jpeg(file=paste0(outLocationPathFuture, "/", "SD_Change.jpg"), width=1200, height=500)
+  print(plot); dev.off()
+  
+  # Just climate futures
+  plot <- ggplot() + geom_boxplot(data=(delta_plot_sd %>% filter(projection %in% model_names)), aes(x=projection, y=delta_daily_sd, fill=projection)) + 
+    labs(title='Change in daily flow standard deviation', y='Change in standard deviation [mm]', x='Projection', fill='Future') + 
+    facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+    nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  jpeg(file=paste0(outLocationPathFuture, "/", "SD_Change_Futures.jpg"), width=1200, height=500)
+  print(plot); dev.off()
+}
 
 ### Change in high flows (95th percentile) ###
 high_flow_q = 0.95
@@ -604,30 +617,32 @@ delta_plot <- model_df %>% filter(rcp == "Historical") %>% inner_join(high_thres
   group_by(gcm, yr) %>% summarize(threshold=first(threshold), hist_days = sum(total > threshold, na.rm = TRUE), .groups = "drop") %>% group_by(gcm) %>% summarize(threshold=first(threshold), hist_days = mean(hist_days)) %>% 
   right_join(model_df %>% filter(rcp!="Historical"), by='gcm') %>% distinct(projection, yr, gcm, rcp, Period, threshold, total, hist_days) %>%  group_by(projection, yr) %>% summarize(gcm=first(gcm), rcp=first(rcp), Period=first(Period), hist_days=first(hist_days), fut_days = sum(total > threshold, na.rm = TRUE), delta_days=fut_days-hist_days)
 
-# All models by RCP
-plot <- ggplot() + geom_boxplot(data=delta_plot, aes(x=projection, y=delta_days, fill=rcp)) + 
-  labs(title='Change in days above historic 95th percentile', y='Change in days', x='Projection', fill='RCP') + 
-  facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c('45' = 'orange', '85' = 'red')) + 
-  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
-jpeg(file=paste0(outLocationPathFuture, "/", "High_Flow_Change_RCP.jpg"), width=1200, height=500)
-print(plot); dev.off()
-
-# All models by climate future
-plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_days, fill=projection)) + 
-  geom_boxplot(data=(delta_plot %>% filter(!projection %in% model_names)), aes(x=projection, y=delta_days, fill='Other')) + 
-  labs(title='Change in days above historic 95th percentile', y='Change in days', x='Projection', fill='Future') + 
-  facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
-  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
-jpeg(file=paste0(outLocationPathFuture, "/", "High_Flow_Change.jpg"), width=1200, height=500)
-print(plot); dev.off()
-
-# Just climate futures
-plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_days, fill=projection)) + 
-  labs(title='Change in days above historic 95th percentile', y='Change in days', x='Projection', fill='Future') + 
-  facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
-  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
-jpeg(file=paste0(outLocationPathFuture, "/", "High_Flow_Change_Futures.jpg"), width=1200, height=500)
-print(plot); dev.off()
+if(make_plots){
+  # All models by RCP
+  plot <- ggplot() + geom_boxplot(data=delta_plot, aes(x=projection, y=delta_days, fill=rcp)) + 
+    labs(title='Change in days above historic 95th percentile', y='Change in days', x='Projection', fill='RCP') + 
+    facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c('45' = 'orange', '85' = 'red')) + 
+    nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  jpeg(file=paste0(outLocationPathFuture, "/", "High_Flow_Change_RCP.jpg"), width=1200, height=500)
+  print(plot); dev.off()
+  
+  # All models by climate future
+  plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_days, fill=projection)) + 
+    geom_boxplot(data=(delta_plot %>% filter(!projection %in% model_names)), aes(x=projection, y=delta_days, fill='Other')) + 
+    labs(title='Change in days above historic 95th percentile', y='Change in days', x='Projection', fill='Future') + 
+    facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+    nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  jpeg(file=paste0(outLocationPathFuture, "/", "High_Flow_Change.jpg"), width=1200, height=500)
+  print(plot); dev.off()
+  
+  # Just climate futures
+  plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_days, fill=projection)) + 
+    labs(title='Change in days above historic 95th percentile', y='Change in days', x='Projection', fill='Future') + 
+    facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+    nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  jpeg(file=paste0(outLocationPathFuture, "/", "High_Flow_Change_Futures.jpg"), width=1200, height=500)
+  print(plot); dev.off()
+}
 
 
 ### Change in low flows (5th percentile) ###
@@ -637,225 +652,221 @@ delta_plot <- model_df %>% filter(rcp == "Historical") %>% inner_join(low_thresh
   group_by(gcm, yr) %>% summarize(threshold=first(threshold), hist_days = sum(total < threshold, na.rm = TRUE), .groups = "drop") %>% group_by(gcm) %>% summarize(threshold=first(threshold), hist_days = mean(hist_days)) %>% 
   right_join(model_df %>% filter(rcp!="Historical"), by='gcm') %>% distinct(projection, yr, gcm, rcp, Period, threshold, total, hist_days) %>%  group_by(projection, yr) %>% summarize(gcm=first(gcm), rcp=first(rcp), Period=first(Period), hist_days=first(hist_days), fut_days = sum(total < threshold, na.rm = TRUE), delta_days=fut_days-hist_days)
 
-# All models by RCP
-plot <- ggplot() + geom_boxplot(data=delta_plot, aes(x=projection, y=delta_days, fill=rcp)) + 
-  labs(title='Change in days below historic 5th percentile', y='Change in days', x='Projection', fill='RCP') + 
-  facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c('45' = 'orange', '85' = 'red')) + 
-  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
-jpeg(file=paste0(outLocationPathFuture, "/", "Low_Flow_Change_RCP.jpg"), width=1200, height=500)
-print(plot); dev.off()
-
-# All models by climate future
-plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_days, fill=projection)) + 
-  geom_boxplot(data=(delta_plot %>% filter(!projection %in% model_names)), aes(x=projection, y=delta_days, fill='Other')) + 
-  labs(title='Change in days below historic 5th percentile', y='Change in days', x='Projection', fill='Future') + 
-  facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
-  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
-jpeg(file=paste0(outLocationPathFuture, "/", "Low_Flow_Change.jpg"), width=1200, height=500)
-print(plot); dev.off()
-
-# Just climate futures
-plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_days, fill=projection)) + 
-  labs(title='Change in days below historic 5th percentile', y='Change in days', x='Projection', fill='Future') + 
-  facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
-  nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
-jpeg(file=paste0(outLocationPathFuture, "/", "Low_Flow_Change_Futures.jpg"), width=1200, height=500)
-print(plot); dev.off()
+if(make_plots){
+  # All models by RCP
+  plot <- ggplot() + geom_boxplot(data=delta_plot, aes(x=projection, y=delta_days, fill=rcp)) + 
+    labs(title='Change in days below historic 5th percentile', y='Change in days', x='Projection', fill='RCP') + 
+    facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c('45' = 'orange', '85' = 'red')) + 
+    nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  jpeg(file=paste0(outLocationPathFuture, "/", "Low_Flow_Change_RCP.jpg"), width=1200, height=500)
+  print(plot); dev.off()
+  
+  # All models by climate future
+  plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_days, fill=projection)) + 
+    geom_boxplot(data=(delta_plot %>% filter(!projection %in% model_names)), aes(x=projection, y=delta_days, fill='Other')) + 
+    labs(title='Change in days below historic 5th percentile', y='Change in days', x='Projection', fill='Future') + 
+    facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+    nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  jpeg(file=paste0(outLocationPathFuture, "/", "Low_Flow_Change.jpg"), width=1200, height=500)
+  print(plot); dev.off()
+  
+  # Just climate futures
+  plot <- ggplot() + geom_boxplot(data=(delta_plot %>% filter(projection %in% model_names)), aes(x=projection, y=delta_days, fill=projection)) + 
+    labs(title='Change in days below historic 5th percentile', y='Change in days', x='Projection', fill='Future') + 
+    facet_wrap(~factor(Period, levels=c("Early","Middle","Late"))) + scale_fill_manual(values = c("Other" = "gray", setNames(color_names, model_names)), labels = c(setNames(scenario_names, model_names))) + 
+    nps_theme() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  jpeg(file=paste0(outLocationPathFuture, "/", "Low_Flow_Change_Futures.jpg"), width=1200, height=500)
+  print(plot); dev.off()
+}
 
 
 #######################################################################
 ### PLOT STREAMFLOW TRENDS AND METRICS ###
-# edit width of jpg figure depending on model_names
 
-# Plot daily streamflow
-plot_list <- list()
-for (i in 1:length(model_names)){
-  proj = model_names[i]
-  scenario <- scenario_names[i]
+if(make_plots){
+  # Plot daily streamflow
+  plot_list <- list()
+  for (i in 1:length(model_names)){
+    proj = model_names[i]
+    scenario <- scenario_names[i]
+    
+    analysis_df <- model_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | (rcp=='Historical')))
+    analysis_df <- analysis_df[order(analysis_df$date), ]
+    plot_list[[i]] <- ggplot(analysis_df, aes(x = date, y = total, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
+      geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+      labs(x = "Water Year", y = "Daily Streamflow (mm)", title = paste(scenario, "Daily Modeled Streamflow"), color='') +
+      scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
+      nps_theme() + theme(legend.position = 'bottom') + scale_y_log10()
+  }
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Daily_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
+  grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+  dev.off()
   
-  analysis_df <- model_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | (rcp=='Historical')))
-  analysis_df <- analysis_df[order(analysis_df$date), ]
-  plot_list[[i]] <- ggplot(analysis_df, aes(x = date, y = total, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
-    labs(x = "Water Year", y = "Daily Streamflow (mm)", title = paste(scenario, "Daily Modeled Streamflow"), color='') +
-    scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
-    nps_theme() + theme(legend.position = 'bottom') + scale_y_log10()
+  # Seasonal Mann-Kendall test on monthly streamflow
+  plot_list <- list()
+  for (i in 1:length(model_names)){
+    proj = model_names[i]
+    scenario <- scenario_names[i]
+    
+    analysis_df <- model_monthly_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | (rcp=='Historical')))
+    analysis_df <- analysis_df[order(analysis_df$date), ]
+    
+    mod_mk <- SeasonalMannKendall(ts(analysis_df$total, start=c(startY, 1), frequency=12))
+    mod_sens <- sens.slope(analysis_df$total[!is.na(analysis_df$total)])
+    if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+    }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
+    plot_list[[i]] <- ggplot(analysis_df, aes(x = as.yearmon(yr_mo), y = total, color=factor(rcp))) + 
+      geom_line(na.rm=TRUE) +
+      geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1) +
+      labs(x = "Water Year", y = "Monthly Streamflow (mm)", title = paste(scenario, "Monthly Modeled Streamflow"), color='') +
+      nps_theme() + theme(legend.position = 'bottom') +
+      scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
+      annotate("text", x = max(as.yearmon(monthly_df$yr_mo)), y = max(monthly_df$total), label = label, color = "black", hjust = 1, vjust = 1)
+  }
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Monthly_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
+  grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+  dev.off()
+  
+  
+  # Annual streamflow volume
+  plot_list <- list()
+  for (i in 1:length(model_names)){
+    proj = model_names[i]
+    scenario <- scenario_names[i]
+    
+    analysis_df <- model_annual_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))
+    mod_mk <- MannKendall(analysis_df$total)
+    mod_sens <- sens.slope(analysis_df$total[!is.na(analysis_df$total)])
+    if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+    }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
+    plot_list[[i]] <- ggplot(analysis_df, aes(x = yr, y = total, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
+      geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+      labs(x = "Water Year", y = "Annual Streamflow (mm)", title = paste(scenario, "Annual Modeled Streamflow"), color='') +
+      nps_theme() + theme(legend.position = 'bottom') + 
+      scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
+      annotate("text", x = max(analysis_df$yr), y = max(analysis_df$total), label = label, color = "black", hjust = 1, vjust = 1) 
+  }
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Annual_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
+  grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+  dev.off()
+  
+  # Streamflow distribution
+  plot_list <- list()
+  for (i in 1:length(model_names)){
+    proj = model_names[i]
+    scenario <- scenario_names[i]
+    
+    analysis_df <- model_df %>% mutate(date_group = yday(date)) %>% group_by(projection, date_group) %>%
+      dplyr::summarize(gcm=first(gcm), rcp=first(rcp), value = mean(total, na.rm = TRUE), .groups = 'drop') %>%
+      mutate(date_group = factor(date_group, levels = c(274:366, 1:273))) %>%  arrange(date_group)
+    
+    plot_list[[i]] <- ggplot() + 
+      geom_smooth(data = (analysis_df %>% filter(!grepl(strsplit(proj, "\\.")[[1]][1], gcm) & !(grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))), aes(x = date_group, y = value, group = projection, color = "Other"), alpha = 0.1,  
+                  method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+      geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp))), aes(x = date_group, y = value, group = projection, color = projection), alpha = 1,  
+                  method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+      geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl('Hist', rcp))), aes(x = date_group, y = value, group = projection, color = "Historical"), alpha = 1,  
+                  method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
+      labs(title=paste("Smoothed Daily Streamflow"), y=paste('Streamflow [mm]'), x=NULL, color='Model') + nps_theme() + 
+      scale_color_manual(values = c("Other" = "gray", 'Historical'='black',setNames(color_names, model_names)), labels = c("Other" = 'Other Models', setNames(scenario_names, model_names))) + 
+      guides(alpha = "none") + scale_x_discrete(breaks = c(274,305,335,1,32,60,91,121,152,182,213,244),labels = c("Oct", "Nov","Dec","Jan","Feb","Mar","Apr","May","Jun",'Jul','Aug','Sep'))
+  }
+  jpeg(file=paste0(outLocationPathFuture, "/", "Smoothed_Daily_Flow_Trends.jpg"), width=300*num_models, height=150*num_models)
+  grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2); dev.off()
+  
+  # High flows (above 95%)
+  high_flow_q = 0.95
+  
+  plot_list <- list()
+  for (i in 1:length(model_names)){
+    proj = model_names[i]
+    scenario <- scenario_names[i]
+    
+    # Calculate days above 95th percentile
+    high_flow_mm = quantile((model_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl('Hist', rcp)))$total, 0.95, na.rm=TRUE)
+    analysis_df <- as.data.frame(model_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp))) %>% 
+                                   mutate(high_flow = ifelse(total >= high_flow_mm, 1, 0)) %>%
+                                   group_by(yr) %>% dplyr::summarize(projection=first(projection), gcm=first(gcm), rcp=first(rcp), days = sum(high_flow)))
+    
+    # Plot
+    mod_mk <- MannKendall(analysis_df$days)
+    mod_sens <- sens.slope(analysis_df$days[!is.na(analysis_df$days)])
+    if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+    }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
+    plot_list[[i]] <- ggplot(analysis_df, aes(x = yr, y = days, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
+      geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+      labs(x = "Water Year", y = "Days per year", title = paste(scenario, "Days Above Historical 95th Percentile"), color='') +
+      nps_theme() + theme(legend.position = 'bottom') + 
+      scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
+      annotate("text", x = max(analysis_df$yr), y = max(analysis_df$days), label = label, color = "black", hjust = 1, vjust = 1) 
+  }
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_High_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
+  grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+  dev.off()
+  
+  
+  
+  # Low flows (below 5%)
+  low_flow_q = 0.05
+  
+  plot_list <- list()
+  for (i in 1:length(model_names)){
+    proj = model_names[i]
+    scenario <- scenario_names[i]
+    
+    # Calculate days below 5th percentile
+    low_flow_mm = quantile((model_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl('Hist', rcp)))$total, 0.05, na.rm=TRUE)
+    analysis_df <- as.data.frame(model_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp))) %>% 
+                                   mutate(low_flow = ifelse(total <= low_flow_mm, 1, 0)) %>%
+                                   group_by(yr) %>% dplyr::summarize(projection=first(projection), gcm=first(gcm), rcp=first(rcp), days = sum(low_flow)))
+    
+    # Plot
+    mod_mk <- MannKendall(analysis_df$days)
+    mod_sens <- sens.slope(analysis_df$days[!is.na(analysis_df$days)])
+    if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+    }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
+    plot_list[[i]] <- ggplot(analysis_df, aes(x = yr, y = days, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
+      geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+      labs(x = "Water Year", y = "Days per year", title = paste(scenario, "Days Below Historical 5th Percentile"), color='') +
+      nps_theme() + theme(legend.position = 'bottom') + 
+      scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
+      annotate("text", x = max(analysis_df$yr), y = max(analysis_df$days), label = label, color = "black", hjust = 1, vjust = 1) 
+  }
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Low_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
+  grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+  dev.off()
+  
+  
+  # 50% flow date
+  plot_list <- list()
+  for (i in 1:length(model_names)){
+    proj = model_names[i]
+    scenario <- scenario_names[i]
+    
+    # Pull projections and add water day
+    analysis_df <- model_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp))) %>% 
+      group_by(water_year) %>% mutate(water_day = (as.integer(difftime(date,ymd(paste0(water_year - 1 ,'-09-30')), units = "days")))) %>% filter(water_year < 2099 & water_year > 1960 & water_year!=2005 & water_year!=2006)
+    
+    # Calculate center of timing (CT)
+    analysis_df <- as.data.frame(analysis_df) %>% mutate(tq = total*water_day) %>%
+      group_by(water_year) %>% dplyr::summarize(projection=first(projection), gcm=first(gcm), rcp=first(rcp), ct = sum(tq)/sum(total))
+    
+    # Plot
+    mod_mk <- MannKendall(analysis_df$ct)
+    mod_sens <- sens.slope(analysis_df$ct[!is.na(analysis_df$ct)])
+    if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+    }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
+    plot_list[[i]] <- ggplot(analysis_df, aes(x = water_year, y = ct, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
+      geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+      labs(x = "Water Year", y = "Days after October 1", title = paste(scenario, "50% Flow Date"), color='') +
+      nps_theme() + theme(legend.position = 'bottom') + 
+      scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
+      annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$ct), label = label, color = "black", hjust = 1, vjust = 1)
+  }
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_50th_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
+  grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+  dev.off()
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Daily_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
-dev.off()
-
-
-# Seasonal Mann-Kendall test on monthly streamflow
-plot_list <- list()
-for (i in 1:length(model_names)){
-  proj = model_names[i]
-  scenario <- scenario_names[i]
-  
-  analysis_df <- model_monthly_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | (rcp=='Historical')))
-  analysis_df <- analysis_df[order(analysis_df$date), ]
-  
-  mod_mk <- SeasonalMannKendall(ts(analysis_df$total, start=c(startY, 1), frequency=12))
-  mod_sens <- sens.slope(analysis_df$total[!is.na(analysis_df$total)])
-  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
-  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
-  plot_list[[i]] <- ggplot(analysis_df, aes(x = as.yearmon(yr_mo), y = total, color=factor(rcp))) + 
-    geom_line(na.rm=TRUE) +
-    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1) +
-    labs(x = "Water Year", y = "Monthly Streamflow (mm)", title = paste(scenario, "Monthly Modeled Streamflow"), color='') +
-    nps_theme() + theme(legend.position = 'bottom') +
-    scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
-    annotate("text", x = max(as.yearmon(monthly_df$yr_mo)), y = max(monthly_df$total), label = label, color = "black", hjust = 1, vjust = 1)
-}
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Monthly_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
-dev.off()
-
-
-# Annual streamflow volume
-plot_list <- list()
-for (i in 1:length(model_names)){
-  proj = model_names[i]
-  scenario <- scenario_names[i]
-  
-  analysis_df <- model_annual_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))
-  mod_mk <- MannKendall(analysis_df$total)
-  mod_sens <- sens.slope(analysis_df$total[!is.na(analysis_df$total)])
-  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
-  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
-  plot_list[[i]] <- ggplot(analysis_df, aes(x = yr, y = total, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
-    labs(x = "Water Year", y = "Annual Streamflow (mm)", title = paste(scenario, "Annual Modeled Streamflow"), color='') +
-    nps_theme() + theme(legend.position = 'bottom') + 
-    scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
-    annotate("text", x = max(analysis_df$yr), y = max(analysis_df$total), label = label, color = "black", hjust = 1, vjust = 1) 
-}
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Annual_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
-dev.off()
-
-
-# Streamflow distribution
-plot_list <- list()
-for (i in 1:length(model_names)){
-  proj = model_names[i]
-  scenario <- scenario_names[i]
-  
-  analysis_df <- model_df %>% mutate(date_group = yday(date)) %>% group_by(projection, date_group) %>%
-    dplyr::summarize(gcm=first(gcm), rcp=first(rcp), value = mean(total, na.rm = TRUE), .groups = 'drop') %>%
-    mutate(date_group = factor(date_group, levels = c(274:366, 1:273))) %>%  arrange(date_group)
-  
-  plot_list[[i]] <- ggplot() + 
-    geom_smooth(data = (analysis_df %>% filter(!grepl(strsplit(proj, "\\.")[[1]][1], gcm) & !(grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))), aes(x = date_group, y = value, group = projection, color = "Other"), alpha = 0.1,  
-                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
-    geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp))), aes(x = date_group, y = value, group = projection, color = projection), alpha = 1,  
-                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
-    geom_smooth(data = (analysis_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl('Hist', rcp))), aes(x = date_group, y = value, group = projection, color = "Historical"), alpha = 1,  
-                method = "gam", formula = y ~ s(x, bs = "cs"), se = FALSE) + 
-    labs(title=paste("Smoothed Daily Streamflow"), y=paste('Streamflow [mm]'), x=NULL, color='Model') + nps_theme() + 
-    scale_color_manual(values = c("Other" = "gray", 'Historical'='black',setNames(color_names, model_names)), labels = c("Other" = 'Other Models', setNames(scenario_names, model_names))) + 
-    guides(alpha = "none") + scale_x_discrete(breaks = c(274,305,335,1,32,60,91,121,152,182,213,244),labels = c("Oct", "Nov","Dec","Jan","Feb","Mar","Apr","May","Jun",'Jul','Aug','Sep'))
-}
-jpeg(file=paste0(outLocationPathFuture, "/", "Smoothed_Daily_Flow_Trends.jpg"), width=300*num_models, height=150*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2); dev.off()
-
-
-
-# High flows (above 95%)
-high_flow_q = 0.95
-
-plot_list <- list()
-for (i in 1:length(model_names)){
-  proj = model_names[i]
-  scenario <- scenario_names[i]
-  
-  # Calculate days above 95th percentile
-  high_flow_mm = quantile((model_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl('Hist', rcp)))$total, 0.95, na.rm=TRUE)
-  analysis_df <- as.data.frame(model_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp))) %>% 
-                                 mutate(high_flow = ifelse(total >= high_flow_mm, 1, 0)) %>%
-                                 group_by(yr) %>% dplyr::summarize(projection=first(projection), gcm=first(gcm), rcp=first(rcp), days = sum(high_flow)))
-  
-  # Plot
-  mod_mk <- MannKendall(analysis_df$days)
-  mod_sens <- sens.slope(analysis_df$days[!is.na(analysis_df$days)])
-  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
-  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
-  plot_list[[i]] <- ggplot(analysis_df, aes(x = yr, y = days, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
-    labs(x = "Water Year", y = "Days per year", title = paste(scenario, "Days Above Historical 95th Percentile"), color='') +
-    nps_theme() + theme(legend.position = 'bottom') + 
-    scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
-    annotate("text", x = max(analysis_df$yr), y = max(analysis_df$days), label = label, color = "black", hjust = 1, vjust = 1) 
-}
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_High_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
-dev.off()
-
-
-
-# Low flows (below 5%)
-low_flow_q = 0.05
-
-plot_list <- list()
-for (i in 1:length(model_names)){
-  proj = model_names[i]
-  scenario <- scenario_names[i]
-  
-  # Calculate days below 5th percentile
-  low_flow_mm = quantile((model_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & grepl('Hist', rcp)))$total, 0.05, na.rm=TRUE)
-  analysis_df <- as.data.frame(model_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp))) %>% 
-                                 mutate(low_flow = ifelse(total <= low_flow_mm, 1, 0)) %>%
-                                 group_by(yr) %>% dplyr::summarize(projection=first(projection), gcm=first(gcm), rcp=first(rcp), days = sum(low_flow)))
-  
-  # Plot
-  mod_mk <- MannKendall(analysis_df$days)
-  mod_sens <- sens.slope(analysis_df$days[!is.na(analysis_df$days)])
-  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
-  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
-  plot_list[[i]] <- ggplot(analysis_df, aes(x = yr, y = days, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
-    labs(x = "Water Year", y = "Days per year", title = paste(scenario, "Days Below Historical 5th Percentile"), color='') +
-    nps_theme() + theme(legend.position = 'bottom') + 
-    scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
-    annotate("text", x = max(analysis_df$yr), y = max(analysis_df$days), label = label, color = "black", hjust = 1, vjust = 1) 
-}
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Low_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
-dev.off()
-
-
-# 50% flow date
-plot_list <- list()
-for (i in 1:length(model_names)){
-  proj = model_names[i]
-  scenario <- scenario_names[i]
-  
-  # Pull projections and add water day
-  analysis_df <- model_df %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp))) %>% 
-    group_by(water_year) %>% mutate(water_day = (as.integer(difftime(date,ymd(paste0(water_year - 1 ,'-09-30')), units = "days")))) %>% filter(water_year < 2099 & water_year > 1960 & water_year!=2005 & water_year!=2006)
-  
-  # Calculate center of timing (CT)
-  analysis_df <- as.data.frame(analysis_df) %>% mutate(tq = total*water_day) %>%
-    group_by(water_year) %>% dplyr::summarize(projection=first(projection), gcm=first(gcm), rcp=first(rcp), ct = sum(tq)/sum(total))
-  
-  # Plot
-  mod_mk <- MannKendall(analysis_df$ct)
-  mod_sens <- sens.slope(analysis_df$ct[!is.na(analysis_df$ct)])
-  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
-  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
-  plot_list[[i]] <- ggplot(analysis_df, aes(x = water_year, y = ct, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
-    labs(x = "Water Year", y = "Days after October 1", title = paste(scenario, "50% Flow Date"), color='') +
-    nps_theme() + theme(legend.position = 'bottom') + 
-    scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
-    annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$ct), label = label, color = "black", hjust = 1, vjust = 1)
-}
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_50th_Flow_Trends.jpg"), width=300*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
-dev.off()
-
-
-
 
 
 # Calculate Q7
@@ -863,51 +874,53 @@ hist_q7 <- model_df %>% mutate(Q7 = rollmean(total, 7, align="right", fill=NA)) 
   group_by(projection, water_year) %>% dplyr::summarize(gcm=first(gcm), rcp=first(rcp), min_q7 = ifelse(all(is.na(Q7)), NA, min(Q7, na.rm = TRUE)), 
                                                         max_q7 = ifelse(all(is.na(Q7)), NA, max(Q7, na.rm = TRUE)), avg_q7 = ifelse(all(is.na(Q7)), NA, mean(Q7, na.rm = TRUE)))
 
-# Q7 min
-plot_list <- list()
-for (i in 1:length(model_names)){
-  proj = model_names[i]
-  scenario <- scenario_names[i]
+
+if(make_plots){
+  # Q7 min
+  plot_list <- list()
+  for (i in 1:length(model_names)){
+    proj = model_names[i]
+    scenario <- scenario_names[i]
+    
+    analysis_df <- hist_q7 %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))
+    mod_mk <- MannKendall(analysis_df$min_q7)
+    mod_sens <- sens.slope(analysis_df$min_q7[!is.na(analysis_df$min_q7)])
+    if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+    }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
+    plot_list[[i]] <- ggplot(analysis_df, aes(x = water_year, y = min_q7, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
+      geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+      labs(x = "Water Year", y = "Streamflow [mm]", title = paste(scenario, "Min. 7 Day Flow (Q7 Min)"), color='') +
+      nps_theme() + theme(legend.position = 'bottom') + 
+      scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
+      annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$min_q7), label = label, color = "black", hjust = 1, vjust = 1) 
+  }
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Q7Min_Trends.jpg"), width=300*num_models, height=200*num_models)
+  grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+  dev.off()
   
-  analysis_df <- hist_q7 %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))
-  mod_mk <- MannKendall(analysis_df$min_q7)
-  mod_sens <- sens.slope(analysis_df$min_q7[!is.na(analysis_df$min_q7)])
-  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
-  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
-  plot_list[[i]] <- ggplot(analysis_df, aes(x = water_year, y = min_q7, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
-    labs(x = "Water Year", y = "Streamflow [mm]", title = paste(scenario, "Min. 7 Day Flow (Q7 Min)"), color='') +
-    nps_theme() + theme(legend.position = 'bottom') + 
-    scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
-    annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$min_q7), label = label, color = "black", hjust = 1, vjust = 1) 
-}
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Q7Min_Trends.jpg"), width=300*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
-dev.off()
-
-
-# Q7 max
-plot_list <- list()
-for (i in 1:length(model_names)){
-  proj = model_names[i]
-  scenario <- scenario_names[i]
   
-  analysis_df <- hist_q7 %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))
-  mod_mk <- MannKendall(analysis_df$max_q7)
-  mod_sens <- sens.slope(analysis_df$max_q7[!is.na(analysis_df$max_q7)])
-  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
-  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
-  plot_list[[i]] <- ggplot(analysis_df, aes(x = water_year, y = max_q7, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
-    labs(x = "Water Year", y = "Streamflow [mm]", title = paste(scenario, "Max. 7 Day Flow (Q7 Max)"), color='') +
-    nps_theme() + theme(legend.position = 'bottom') + 
-    scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
-    annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$max_q7), label = label, color = "black", hjust = 1, vjust = 1) 
+  # Q7 max
+  plot_list <- list()
+  for (i in 1:length(model_names)){
+    proj = model_names[i]
+    scenario <- scenario_names[i]
+    
+    analysis_df <- hist_q7 %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))
+    mod_mk <- MannKendall(analysis_df$max_q7)
+    mod_sens <- sens.slope(analysis_df$max_q7[!is.na(analysis_df$max_q7)])
+    if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+    }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
+    plot_list[[i]] <- ggplot(analysis_df, aes(x = water_year, y = max_q7, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
+      geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+      labs(x = "Water Year", y = "Streamflow [mm]", title = paste(scenario, "Max. 7 Day Flow (Q7 Max)"), color='') +
+      nps_theme() + theme(legend.position = 'bottom') + 
+      scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
+      annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$max_q7), label = label, color = "black", hjust = 1, vjust = 1) 
+  }
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Q7Max_Trends.jpg"), width=300*num_models, height=200*num_models)
+  grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+  dev.off()
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Q7Max_Trends.jpg"), width=300*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
-dev.off()
-
 
 
 
@@ -933,29 +946,30 @@ if (tolower(comparison)=='below') {
 }
 
 # plot
-plot_list <- list()
-for (i in 1:length(model_names)){
-  proj = model_names[i]
-  scenario <- scenario_names[i]
-  
-  analysis_df <- threshold %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))
-  
-  mod_mk <- MannKendall(analysis_df$days)
-  mod_sens <- sens.slope(analysis_df$days[!is.na(analysis_df$days)])
-  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
-  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
-  
-  plot_list[[i]] <- ggplot(analysis_df, aes(x = water_year, y = days, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
-    labs(x = "Water Year", y = "Days", title = paste('Days', comparison, round(flow_level), 'mm, ', month.abb[as.numeric(mos)][1], '-', month.abb[as.numeric(mos)][length(mos)]), color='') +
-    nps_theme() + theme(legend.position = 'bottom') + 
-    scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
-    annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$days), label = label, color = "black", hjust = 1, vjust = 1) 
+if(make_plots){
+  plot_list <- list()
+  for (i in 1:length(model_names)){
+    proj = model_names[i]
+    scenario <- scenario_names[i]
+    
+    analysis_df <- threshold %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp)))
+    
+    mod_mk <- MannKendall(analysis_df$days)
+    mod_sens <- sens.slope(analysis_df$days[!is.na(analysis_df$days)])
+    if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+    }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
+    
+    plot_list[[i]] <- ggplot(analysis_df, aes(x = water_year, y = days, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
+      geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+      labs(x = "Water Year", y = "Days", title = paste('Days', comparison, round(flow_level), 'mm, ', month.abb[as.numeric(mos)][1], '-', month.abb[as.numeric(mos)][length(mos)]), color='') +
+      nps_theme() + theme(legend.position = 'bottom') + 
+      scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
+      annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$days), label = label, color = "black", hjust = 1, vjust = 1) 
+  }
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Days_", comparison, "_", round(flow_level), "mm_", month.abb[as.numeric(mos)][1], "_", month.abb[as.numeric(mos)][length(mos)],".jpg"), width=300*num_models, height=200*num_models)
+  grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+  dev.off()
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_Days_", comparison, "_", round(flow_level), "mm_", month.abb[as.numeric(mos)][1], "_", month.abb[as.numeric(mos)][length(mos)],".jpg"), width=300*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
-dev.off()
-
 
 
 
@@ -975,31 +989,30 @@ runoff_efficiency <- runoff_efficiency %>% full_join(bind_rows(hist_p, fut_p), b
 runoff_efficiency$efficiency <- (runoff_efficiency$ann_runoff / runoff_efficiency$ann_p) * 100
 
 # Plot
-plot_list <- list()
-for (i in 1:length(model_names)){
-  proj = model_names[i]
-  scenario <- scenario_names[i]
-  
-  analysis_df <- runoff_efficiency %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp))) 
-  mod_mk <- MannKendall(analysis_df$efficiency)
-  mod_sens <- sens.slope(analysis_df$efficiency[!is.na(analysis_df$efficiency)])
-  if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
-  }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
-  plot_mod <- ggplot(analysis_df, aes(x = water_year, y = efficiency, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
-    geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
-    labs(x = "Water Year", y = "Runoff Efficiency (%)", title = paste(scenario, "Runoff Efficiency"), color='') +
-    nps_theme() + theme(legend.position = 'bottom') + 
-    scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
-    annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$efficiency), label = label, color = "black", hjust = 1, vjust = 1) 
-  print(plot_mod)
-  plot_list[[i]] <- plot_mod
+if(make_plots){
+  plot_list <- list()
+  for (i in 1:length(model_names)){
+    proj = model_names[i]
+    scenario <- scenario_names[i]
+    
+    analysis_df <- runoff_efficiency %>% filter(grepl(strsplit(proj, "\\.")[[1]][1], gcm) & (grepl(gsub("\\D", "", strsplit(proj, "\\.")[[1]][2]), rcp) | grepl('Hist', rcp))) 
+    mod_mk <- MannKendall(analysis_df$efficiency)
+    mod_sens <- sens.slope(analysis_df$efficiency[!is.na(analysis_df$efficiency)])
+    if(mod_mk$sl <= 0.05){label <- sprintf('Trend: Significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)
+    }else{label <- sprintf('Trend: Not significant\n p-value: %.2f\n Estimated slope: %.2f', mod_mk$sl, mod_sens$estimates)}
+    plot_mod <- ggplot(analysis_df, aes(x = water_year, y = efficiency, color=factor(rcp))) + geom_line(na.rm=TRUE, linewidth=1, alpha=0.7) +
+      geom_smooth(method = "loess", formula = y ~ x, se = FALSE, aes(color = 'Trend'), linetype='dashed', linewidth=1.5) +
+      labs(x = "Water Year", y = "Runoff Efficiency (%)", title = paste(scenario, "Runoff Efficiency"), color='') +
+      nps_theme() + theme(legend.position = 'bottom') + 
+      scale_color_manual(values = c('Historical'='black', '45'=color_names[i], '85'=color_names[i], "Trend"="black"), labels = c("Historical"="Historical", '45'=proj, '85'=proj)) + 
+      annotate("text", x = max(analysis_df$water_year), y = max(analysis_df$efficiency), label = label, color = "black", hjust = 1, vjust = 1) 
+    print(plot_mod)
+    plot_list[[i]] <- plot_mod
+  }
+  jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_RunoffEffiency_Trends.jpg"), width=300*num_models, height=200*num_models)
+  grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
+  dev.off()
 }
-jpeg(file=paste0(outLocationPathFuture, "/", "Modeled_RunoffEffiency_Trends.jpg"), width=300*num_models, height=200*num_models)
-grid.arrange(grobs = plot_list, ncol=num_models/2, nrow=num_models/2)
-dev.off()
-
-
-
 
 
 

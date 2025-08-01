@@ -21,20 +21,26 @@ sapply(list.files(pattern="*.R"), source, .GlobalEnv); setwd(here())
 
 #######################################################################
 ### Set user-defined variables ###
-PETMethod = "Oudin" 
+# General variables
 optimization = TRUE
 optimization_var = 'AET'
-delayStart = TRUE 
-incompleteMonths = FALSE 
-GridMET = TRUE
-fillLeapDays = TRUE 
 future_analysis = TRUE
 calcFutureWB = FALSE
-userSetJTemp = FALSE 
 make_plots = TRUE 
 provide_coords = FALSE
 point_location = FALSE
-percent_skill_cutoff = 0.1 
+percent_skill_cutoff = 0.1
+
+# Meteorological data variables
+incompleteMonths = FALSE 
+GridMET = TRUE
+fillLeapDays = TRUE 
+
+# Water balance variables
+PETMethod = "Oudin" 
+userSetJTemp = FALSE 
+
+# Folder name
 FolderName = 'optim' 
 
 ### Define watershed ###

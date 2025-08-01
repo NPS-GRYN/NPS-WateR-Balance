@@ -23,20 +23,26 @@ num_watersheds <- length(watershed_siteid)
 # These parameters will be used for all watersheds
 # To experiement with the effects of parameter changes on calibration, use
 # the WB_Multi_Parameter.R script.
-PETMethod = "Oudin" 
+
+# General variables
 optimization = TRUE
 optimization_var = 'AET'
-delayStart = TRUE 
-incompleteMonths = FALSE 
-GridMET = TRUE
-fillLeapDays = TRUE 
 future_analysis = TRUE
 calcFutureWB = FALSE
-userSetJTemp = FALSE 
 make_plots = TRUE 
 provide_coords = FALSE
 point_location = FALSE
 percent_skill_cutoff = 0.1 
+
+# Meteorological data variables
+incompleteMonths = FALSE 
+GridMET = TRUE
+fillLeapDays = TRUE 
+
+# Water balance variables
+PETMethod = "Oudin" 
+userSetJTemp = FALSE 
+
 
 ### Define time period for historical analysis ###
 startY = 2000; startM = 01; startD = 01 

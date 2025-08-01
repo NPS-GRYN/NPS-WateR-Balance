@@ -17,8 +17,8 @@ setwd(here('Code')); sapply(list.files(pattern="*.R"), source, .GlobalEnv); setw
 # redefine gage site ID so this script can be run independently
 GageSiteID <- GageSiteID
 SiteID <- SiteID
-#GageSiteID <- '03460000'
-#SiteID <- 'Cataloochee'; SiteID_FileName <- gsub(pattern = " ", x = SiteID, replacement = "")
+#GageSiteID <- '03497300'
+#SiteID <- 'Little River'; SiteID_FileName <- gsub(pattern = " ", x = SiteID, replacement = "")
 #make_plots <- TRUE
 
 
@@ -241,9 +241,11 @@ if(make_plots){
 
 
 ### Annual streamflow volume
-jpeg(file=paste0(outLocationPathHist, "/", "Annual_Volume_Trends.jpg"), width=600, height=400)
-plot_trends(meas_flow_ann$water_year, meas_flow_ann$MeasMM, 'Annual Measured Streamflow', 'Streamflow(mm)', TRUE)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathHist, "/", "Annual_Volume_Trends.jpg"), width=600, height=400)
+  plot_trends(meas_flow_ann$water_year, meas_flow_ann$MeasMM, 'Annual Measured Streamflow', 'Streamflow(mm)', TRUE)
+  dev.off()
+}
 
 
 
@@ -289,9 +291,11 @@ high_flow_mm = quantile(meas_flow_daily$MeasMM, 0.95, na.rm=TRUE)
 
 hist_high <- as.data.frame(meas_flow_daily %>% mutate(high_flow = ifelse(MeasMM >= high_flow_mm, 1, 0)) %>%
                                  group_by(water_year) %>% dplyr::summarize(days = sum(high_flow)))
-jpeg(file=paste0(outLocationPathHist, "/", "Annual_High_Flow_Trends.jpg"), width=600, height=400)
-plot_trends(hist_high$water_year, hist_high$days, 'Days Above Historical 95th Percentile', "Number of days per year", TRUE)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathHist, "/", "Annual_High_Flow_Trends.jpg"), width=600, height=400)
+  plot_trends(hist_high$water_year, hist_high$days, 'Days Above Historical 95th Percentile', "Number of days per year", TRUE)
+  dev.off()
+}
 
 
 
@@ -301,9 +305,11 @@ low_flow_mm = quantile(meas_flow_daily$MeasMM, 0.05, na.rm=TRUE)
 
 hist_low <- as.data.frame(meas_flow_daily %>% mutate(low_flow = ifelse(MeasMM <= low_flow_mm, 1, 0)) %>%
                              group_by(water_year) %>% dplyr::summarize(days = sum(low_flow)))
-jpeg(file=paste0(outLocationPathHist, "/", "Annual_Low_Flow_Trends.jpg"), width=600, height=400)
-plot_trends(hist_low$water_year, hist_low$days, 'Days Below Historical 5th Percentile', "Number of days per year", TRUE)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathHist, "/", "Annual_Low_Flow_Trends.jpg"), width=600, height=400)
+  plot_trends(hist_low$water_year, hist_low$days, 'Days Below Historical 5th Percentile', "Number of days per year", TRUE)
+  dev.off()
+}
 
 
 ### 50% flow date
@@ -318,15 +324,20 @@ dev.off()
 hist_q7 <- DailyStream %>% group_by(waterYear) %>% dplyr::summarize(min_q7 = ifelse(all(is.na(Q7)), NA, min(Q7, na.rm = TRUE)), 
                                                                     max_q7 = ifelse(all(is.na(Q7)), NA, max(Q7, na.rm = TRUE)), 
                                                                     avg_q7 = ifelse(all(is.na(Q7)), NA, mean(Q7, na.rm = TRUE)))
-jpeg(file=paste0(outLocationPathHist, "/", "Annual_Q7Min_Trends.jpg"), width=600, height=400)
-plot_trends(hist_q7$waterYear, hist_q7$min_q7, 'Minimum 7 Day Flow (Q7 Min)', "Streamflow (m3/s)", TRUE)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathHist, "/", "Annual_Q7Min_Trends.jpg"), width=600, height=400)
+  plot_trends(hist_q7$waterYear, hist_q7$min_q7, 'Minimum 7 Day Flow (Q7 Min)', "Streamflow (m3/s)", TRUE)
+  dev.off()
+}
 
 
 ### Q7 max
-jpeg(file=paste0(outLocationPathHist, "/", "Annual_Q7Max_Trends.jpg"), width=600, height=400)
-plot_trends(hist_q7$waterYear, hist_q7$max_q7, 'Maximum 7 Day Flow (Q7 Max)', "Streamflow (m3/s)", TRUE)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathHist, "/", "Annual_Q7Max_Trends.jpg"), width=600, height=400)
+  plot_trends(hist_q7$waterYear, hist_q7$max_q7, 'Maximum 7 Day Flow (Q7 Max)', "Streamflow (m3/s)", TRUE)
+  dev.off()
+}
+
 
 
 
@@ -334,39 +345,52 @@ dev.off()
 ### Historical trend plots for specific metrics - last 20 years ###
 
 ### Annual streamflow volume
-jpeg(file=paste0(outLocationPathHist, "/", "Annual_Volume_Trends_2000.jpg"), width=600, height=400)
-plot_trends((meas_flow_ann %>% filter(water_year > 2000))$water_year, (meas_flow_ann%>% filter(water_year > 2000))$MeasMM, 'Annual Measured Streamflow', 'Streamflow(mm)', FALSE)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathHist, "/", "Annual_Volume_Trends_2000.jpg"), width=600, height=400)
+  plot_trends((meas_flow_ann %>% filter(water_year > 2000))$water_year, (meas_flow_ann%>% filter(water_year > 2000))$MeasMM, 'Annual Measured Streamflow', 'Streamflow(mm)', FALSE)
+  dev.off()
+}
 
 
 ### High flows (above 95%)
-jpeg(file=paste0(outLocationPathHist, "/", "Annual_High_Flow_Trends_2000.jpg"), width=600, height=400)
-plot_trends((hist_high %>% filter(water_year > 2000))$water_year, (hist_high %>% filter(water_year > 2000))$days, 'Days Above Historical 95th Percentile', "Number of days per year", FALSE)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathHist, "/", "Annual_High_Flow_Trends_2000.jpg"), width=600, height=400)
+  plot_trends((hist_high %>% filter(water_year > 2000))$water_year, (hist_high %>% filter(water_year > 2000))$days, 'Days Above Historical 95th Percentile', "Number of days per year", FALSE)
+  dev.off()
+}
+
 
 
 ### Low flows (below 5%)
-jpeg(file=paste0(outLocationPathHist, "/", "Annual_Low_Flow_Trends_2000.jpg"), width=600, height=400)
-plot_trends((hist_low %>% filter(water_year > 2000))$water_year, (hist_low %>% filter(water_year > 2000))$days, 'Days Below Historical 5th Percentile', "Number of days per year", FALSE)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathHist, "/", "Annual_Low_Flow_Trends_2000.jpg"), width=600, height=400)
+  plot_trends((hist_low %>% filter(water_year > 2000))$water_year, (hist_low %>% filter(water_year > 2000))$days, 'Days Below Historical 5th Percentile', "Number of days per year", FALSE)
+  dev.off()
+}
 
 
 ### 50% flow date
-jpeg(file=paste0(outLocationPathHist, "/", "Annual_50th_Flow_Trends_2000.jpg"), width=600, height=400)
-plot_trends((hist_ct %>% filter(water_year > 2000))$water_year, (hist_ct %>% filter(water_year > 2000))$ct, 'Historical 50% Flow Date', "Days after Oct 1", FALSE)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathHist, "/", "Annual_50th_Flow_Trends_2000.jpg"), width=600, height=400)
+  plot_trends((hist_ct %>% filter(water_year > 2000))$water_year, (hist_ct %>% filter(water_year > 2000))$ct, 'Historical 50% Flow Date', "Days after Oct 1", FALSE)
+  dev.off()
+}
 
 
 ### Q7 min %>% filter(!is.na(waterYear))
-jpeg(file=paste0(outLocationPathHist, "/", "Annual_Q7Min_Trends_2000.jpg"), width=600, height=400)
-plot_trends((hist_q7 %>% filter(waterYear > 2000))$waterYear, (hist_q7 %>% filter(waterYear > 2000))$min_q7, 'Minimum 7 Day Flow (Q7 Min)', "Streamflow (m3/s)", FALSE)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathHist, "/", "Annual_Q7Min_Trends_2000.jpg"), width=600, height=400)
+  plot_trends((hist_q7 %>% filter(waterYear > 2000))$waterYear, (hist_q7 %>% filter(waterYear > 2000))$min_q7, 'Minimum 7 Day Flow (Q7 Min)', "Streamflow (m3/s)", FALSE)
+  dev.off()
+}
 
 
 ### Q7 max
-jpeg(file=paste0(outLocationPathHist, "/", "Annual_Q7Max_Trends_2000.jpg"), width=600, height=400)
-plot_trends((hist_q7 %>% filter(waterYear > 2000))$waterYear, (hist_q7 %>% filter(waterYear > 2000))$max_q7, 'Maximum 7 Day Flow (Q7 Max)', "Streamflow (m3/s)", FALSE)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathHist, "/", "Annual_Q7Max_Trends_2000.jpg"), width=600, height=400)
+  plot_trends((hist_q7 %>% filter(waterYear > 2000))$waterYear, (hist_q7 %>% filter(waterYear > 2000))$max_q7, 'Maximum 7 Day Flow (Q7 Max)', "Streamflow (m3/s)", FALSE)
+  dev.off()
+}
 
 
 
@@ -391,9 +415,11 @@ if (tolower(comparison)=='below') {
 }
 
 # plot
-jpeg(file=paste0(outLocationPathHist, "/", "Days_", comparison, "_", flow_level, "_", month.abb[mos][1], "_", month.abb[mos][length(mos)],".jpg"), width=600, height=400)
-plot_trends(hist_threshold$waterYear, hist_threshold$days, paste('Days', comparison, flow_level, 'cfs, ', month.abb[mos][1], '-', month.abb[mos][length(mos)]), "Days", FALSE)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathHist, "/", "Days_", comparison, "_", flow_level, "_", month.abb[mos][1], "_", month.abb[mos][length(mos)],".jpg"), width=600, height=400)
+  plot_trends(hist_threshold$waterYear, hist_threshold$days, paste('Days', comparison, flow_level, 'cfs, ', month.abb[mos][1], '-', month.abb[mos][length(mos)]), "Days", FALSE)
+  dev.off()
+}
 
 
 
@@ -407,11 +433,15 @@ runoff_efficiency <- runoff_efficiency %>% full_join(hist_p, by = 'water_year') 
 runoff_efficiency$efficiency <- runoff_efficiency$ann_stream / runoff_efficiency$ann_p; head(runoff_efficiency)
 
 # plot
-jpeg(file=paste0(outLocationPathHist, "/", "Annual_Efficiency_Trends.jpg"), width=600, height=400)
-plot_trends(runoff_efficiency$water_year, runoff_efficiency$efficiency, 'Streamflow Efficiency', "Streamflow : Precipitation Ratio", FALSE)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathHist, "/", "Annual_Efficiency_Trends.jpg"), width=600, height=400)
+  plot_trends(runoff_efficiency$water_year, runoff_efficiency$efficiency, 'Streamflow Efficiency', "Streamflow : Precipitation Ratio", TRUE)
+  dev.off()
+}
 
 # plot for only the last 20 years
-jpeg(file=paste0(outLocationPathHist, "/", "Annual_Efficiency_Trends.jpg"), width=600, height=400)
-plot_trends((runoff_efficiency %>% filter(water_year>2000))$water_year, (runoff_efficiency %>% filter(water_year>2000))$efficiency, 'Streamflow Efficiency', "Streamflow : Precipitation Ratio", FALSE)
-dev.off()
+if(make_plots){
+  jpeg(file=paste0(outLocationPathHist, "/", "Annual_Efficiency_Trends_2000.jpg"), width=600, height=400)
+  plot_trends((runoff_efficiency %>% filter(water_year>2000))$water_year, (runoff_efficiency %>% filter(water_year>2000))$efficiency, 'Streamflow Efficiency', "Streamflow : Precipitation Ratio", FALSE)
+  dev.off()
+}
